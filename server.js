@@ -496,9 +496,6 @@ function getRoom(roomId) {
     return rooms[roomId] || null;
 }
 
-function isValidSeat(seat) {
-    return Number.isInteger(seat) && seat >= 1 && seat <= 4;
-}
 
 function normalizeAdmin(admin) {
     return {
@@ -3463,7 +3460,7 @@ app.post('/admin/clear-seat', requireAdmin, requirePermission('rooms.clearSeat')
         const seat = Number.parseInt(req.body.seat, 10);
         const room = getRoom(roomId);
 
-        if (!room || !isValidSeat(seat)) {
+        if (!room || !Number.isInteger(seat) || seat < 1 || seat > room.seats.length) {
             return res.status(400).send('Ungültige Daten');
         }
 
@@ -4201,7 +4198,7 @@ app.get('/:room/sit/:seat', (req, res) => {
         return res.status(404).send('Raum nicht gefunden');
     }
 
-    if (!isValidSeat(seat)) {
+    if (!Number.isInteger(seat) || seat < 1 || seat > room.seats.length) {
         return res.status(400).send('Ungültiger Platz');
     }
 
@@ -4471,7 +4468,7 @@ app.post('/:room/sit/:seat', requireCsrf, (req, res) => {
     const room = getRoom(roomId);
 
     if (!room) return res.status(404).send('Raum nicht gefunden');
-    if (!isValidSeat(seat)) return res.status(400).send('Ungültiger Platz');
+    if (!Number.isInteger(seat) || seat < 1 || seat > room.seats.length) return res.status(400).send('Ungültiger Platz');
 
     const name = String(req.body.name || '').trim();
     const title = String(req.body.title || '').trim();
@@ -4578,11 +4575,12 @@ app.get('/auth/callback', async (req, res) => {
         const pendingRoom = req.session?.pendingRoom || null;
         const pendingSeat = Number.parseInt(req.session?.pendingSeat, 10);
 
-        if (!pendingRoom || !getRoom(pendingRoom)) {
+        const pendingRoomObj = getRoom(pendingRoom);
+        if (!pendingRoom || !pendingRoomObj) {
             return res.redirect('/auth/error?msg=' + encodeURIComponent('Kein gültiger Raum in der Session gefunden.'));
         }
 
-        if (!isValidSeat(pendingSeat)) {
+        if (!Number.isInteger(pendingSeat) || pendingSeat < 1 || pendingSeat > pendingRoomObj.seats.length) {
             return res.redirect('/auth/error?msg=' + encodeURIComponent('Kein gültiger Platz in der Session gefunden.'));
         }
 
