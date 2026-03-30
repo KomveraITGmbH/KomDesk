@@ -1496,6 +1496,16 @@ function renderAdminLayout(req, title, content) {
                     btn.innerHTML = allChecked ? '&#10007; Alle abwählen' : '&#10003; Alle Berechtigungen';
                 }
             }
+
+            function trmnlModeChange(roomId) {
+                var sel = document.getElementById('trmnlMode_' + roomId);
+                if (!sel) return;
+                var mode = sel.value;
+                var pollingEl = document.getElementById('trmnl_polling_' + roomId);
+                var webhookEl = document.getElementById('trmnl_webhook_' + roomId);
+                if (pollingEl) pollingEl.style.display = mode === 'polling' ? 'block' : 'none';
+                if (webhookEl) webhookEl.style.display = mode === 'webhook' ? 'block' : 'none';
+            }
         </script>
     </body>
     </html>
@@ -1522,20 +1532,57 @@ TRMNL PUSH
 ==================================================
 */
 async function pushToTrmnl(room) {
-    if (!room.trmnlUuid || !room.trmnlApiKey) return;
-    try {
-        const payload = renderRoomApiJson(room);
-        await fetch(`https://usetrmnl.com/api/custom_plugins/${encodeURIComponent(room.trmnlUuid)}`, {
-            method: 'POST',
-            headers: {
-                'Authorization': `Bearer ${room.trmnlApiKey}`,
-                'Content-Type': 'application/json'
-            },
-            body: JSON.stringify({ merge_variables: payload })
-        });
-    } catch (err) {
-        console.error(`TRMNL Push Fehler (${room.id}):`, err.message);
+    const mode = room.trmnlMode || 'none';
+    if (mode === 'none') return;
+
+    const payload = renderRoomApiJson(room);
+
+    if (mode === 'webhook') {
+        // Webhook URL (Daten direkt pushen)
+        if (room.trmnlWebhookUrl) {
+            try {
+                await fetch(room.trmnlWebhookUrl, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ merge_variables: payload })
+                });
+            } catch (err) {
+                console.error(`TRMNL Webhook Push Fehler (${room.id}):`, err.message);
+            }
+        }
+
+        // Plugin API Key (falls Webhook + API Key kombiniert)
+        if (room.trmnlApiKey && room.trmnlUuid) {
+            try {
+                await fetch(`https://usetrmnl.com/api/custom_plugins/${encodeURIComponent(room.trmnlUuid)}`, {
+                    method: 'POST',
+                    headers: {
+                        'Authorization': `Bearer ${room.trmnlApiKey}`,
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({ merge_variables: payload })
+                });
+            } catch (err) {
+                console.error(`TRMNL Plugin Push Fehler (${room.id}):`, err.message);
+            }
+        }
+
+        // Device Wake-up (sofortige Anzeige, weniger Stromverbrauch)
+        if (room.trmnlDeviceApiKey && room.trmnlDeviceMac) {
+            try {
+                await fetch(`https://usetrmnl.com/api/devices/${encodeURIComponent(room.trmnlDeviceMac)}/wake`, {
+                    method: 'POST',
+                    headers: {
+                        'Authorization': `Bearer ${room.trmnlDeviceApiKey}`,
+                        'Content-Type': 'application/json'
+                    }
+                });
+            } catch (err) {
+                console.error(`TRMNL Device Wake Fehler (${room.id}):`, err.message);
+            }
+        }
     }
+    // mode === 'polling': TRMNL holt Daten selbst, kein Push nötig
 }
 
 async function fetchMicrosoftUser(accessToken) {
@@ -3222,11 +3269,34 @@ app.get('/admin/rooms', requireAdmin, requirePermission('rooms.view'), (req, res
                             <label>Raumnummer</label>
                             <input type="text" name="roomnumber" value="${escapeHtml(room.roomnumber)}" required>
 
-                            <label>TRMNL Plugin UUID <span style="font-weight:400;opacity:.6;">(optional, für sofortige Push-Updates)</span></label>
-                            <input type="text" name="trmnlUuid" value="${escapeHtml(room.trmnlUuid || '')}" placeholder="z. B. 267803">
+                            <label>TRMNL Update-Modus</label>
+                            <select name="trmnlMode" id="trmnlMode_${escapeHtml(room.id)}" onchange="trmnlModeChange('${escapeHtml(room.id)}')" style="margin-bottom:12px;">
+                                <option value="none"    ${(room.trmnlMode||'none')==='none'    ? 'selected' : ''}>Kein TRMNL</option>
+                                <option value="polling" ${(room.trmnlMode||'none')==='polling' ? 'selected' : ''}>Polling (TRMNL zieht Daten selbst)</option>
+                                <option value="webhook" ${(room.trmnlMode||'none')==='webhook' ? 'selected' : ''}>Webhook / Push (sofortige Aktualisierung)</option>
+                            </select>
 
-                            <label>TRMNL API Key <span style="font-weight:400;opacity:.6;">(optional)</span></label>
-                            <input type="text" name="trmnlApiKey" value="${escapeHtml(room.trmnlApiKey || '')}" placeholder="Bearer Token aus TRMNL">
+                            <div id="trmnl_polling_${escapeHtml(room.id)}" style="display:${(room.trmnlMode||'none')==='polling' ? 'block' : 'none'}">
+                                <p style="font-size:13px;opacity:.7;margin-bottom:8px;">Das Terminal fragt TRMNL selbst in einem Intervall ab. Keine weiteren Einstellungen nötig — stelle in TRMNL das gewünschte Refresh-Intervall ein.</p>
+                                <label>TRMNL Plugin UUID</label>
+                                <input type="text" name="trmnlUuid" value="${escapeHtml(room.trmnlUuid || '')}" placeholder="z. B. 267803">
+                            </div>
+
+                            <div id="trmnl_webhook_${escapeHtml(room.id)}" style="display:${(room.trmnlMode||'none')==='webhook' ? 'block' : 'none'}">
+                                <p style="font-size:13px;opacity:.7;margin-bottom:8px;">Bei jeder Änderung wird TRMNL sofort benachrichtigt. Das Terminal wird direkt geweckt → weniger Stromverbrauch, sofortige Anzeige.</p>
+
+                                <label>Plugin API Key <span style="font-weight:400;opacity:.6;">(für Daten-Push)</span></label>
+                                <input type="text" name="trmnlApiKey" value="${escapeHtml(room.trmnlApiKey || '')}" placeholder="Bearer Token aus TRMNL">
+
+                                <label>Webhook URL <span style="font-weight:400;opacity:.6;">(aus TRMNL Plugin → Webhook-Strategie)</span></label>
+                                <input type="text" name="trmnlWebhookUrl" value="${escapeHtml(room.trmnlWebhookUrl || '')}" placeholder="https://usetrmnl.com/api/custom_plugins/...">
+
+                                <label>Device API Key <span style="font-weight:400;opacity:.6;">(für sofortiges Device Wake-up)</span></label>
+                                <input type="text" name="trmnlDeviceApiKey" value="${escapeHtml(room.trmnlDeviceApiKey || '')}" placeholder="Device Bearer Token aus TRMNL">
+
+                                <label>Device MAC-Adresse <span style="font-weight:400;opacity:.6;">(aus TRMNL → Dein Gerät)</span></label>
+                                <input type="text" name="trmnlDeviceMac" value="${escapeHtml(room.trmnlDeviceMac || '')}" placeholder="z. B. AA:BB:CC:DD:EE:FF">
+                            </div>
 
                             <button type="submit">Raum speichern</button>
                         </form>
@@ -3379,8 +3449,12 @@ app.post('/admin/update-room', requireAdmin, requirePermission('rooms.edit'), re
 
         room.abteilung = String(req.body.abteilung || '').trim();
         room.roomnumber = String(req.body.roomnumber || '').trim();
+        room.trmnlMode = ['none','polling','webhook'].includes(req.body.trmnlMode) ? req.body.trmnlMode : 'none';
         room.trmnlUuid = String(req.body.trmnlUuid || '').trim();
         room.trmnlApiKey = String(req.body.trmnlApiKey || '').trim();
+        room.trmnlWebhookUrl = String(req.body.trmnlWebhookUrl || '').trim();
+        room.trmnlDeviceApiKey = String(req.body.trmnlDeviceApiKey || '').trim();
+        room.trmnlDeviceMac = String(req.body.trmnlDeviceMac || '').trim();
 
         saveRooms();
         return res.redirect('/admin/rooms');
