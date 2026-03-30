@@ -2967,45 +2967,55 @@ app.get('/admin', requireAdmin, requirePermission('dashboard.view'), (req, res) 
     const freeSeats     = totalSeats - occupiedSeats;
     const terminalList  = Object.values(terminals);
 
-    // --- Statistiken ---
+    const auslastungPct = totalSeats ? Math.round(occupiedSeats / totalSeats * 100) : 0;
+
+    // --- Statistiken (volle Breite, Hero) ---
     const statsHtml = `
-        <div class="card">
-            <h2 style="margin:0 0 16px 0;font-size:16px;">📊 Statistiken</h2>
-            <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px;text-align:center;">
-                <div style="padding:14px;border:1px solid var(--border);border-radius:8px;">
-                    <div style="font-size:28px;font-weight:700;">${roomList.length}</div>
-                    <div style="opacity:.55;font-size:12px;margin-top:3px;">Räume</div>
+        <div class="card db-hero">
+            <div class="db-hero-label">📊 Übersicht</div>
+            <div class="db-stat-grid">
+                <div class="db-stat-tile">
+                    <div class="db-stat-num">${roomList.length}</div>
+                    <div class="db-stat-sub">Räume</div>
                 </div>
-                <div style="padding:14px;border:1px solid var(--border);border-radius:8px;">
-                    <div style="font-size:28px;font-weight:700;color:#dc2626;">${occupiedSeats}</div>
-                    <div style="opacity:.55;font-size:12px;margin-top:3px;">Belegt</div>
+                <div class="db-stat-tile db-stat-tile--red">
+                    <div class="db-stat-num" style="color:#dc2626;">${occupiedSeats}</div>
+                    <div class="db-stat-sub">Belegt</div>
                 </div>
-                <div style="padding:14px;border:1px solid var(--border);border-radius:8px;">
-                    <div style="font-size:28px;font-weight:700;color:#059669;">${freeSeats}</div>
-                    <div style="opacity:.55;font-size:12px;margin-top:3px;">Frei</div>
+                <div class="db-stat-tile db-stat-tile--green">
+                    <div class="db-stat-num" style="color:#059669;">${freeSeats}</div>
+                    <div class="db-stat-sub">Frei</div>
+                </div>
+                <div class="db-stat-tile">
+                    <div class="db-stat-num">${terminalList.length}</div>
+                    <div class="db-stat-sub">Terminals</div>
                 </div>
             </div>
-            <div style="margin-top:12px;background:var(--border);border-radius:999px;height:7px;overflow:hidden;">
-                <div style="height:100%;width:${totalSeats ? Math.round(occupiedSeats / totalSeats * 100) : 0}%;background:#dc2626;border-radius:999px;"></div>
+            <div style="margin-top:20px;">
+                <div style="display:flex;justify-content:space-between;font-size:13px;opacity:.6;margin-bottom:6px;">
+                    <span>Auslastung</span><span>${auslastungPct}%</span>
+                </div>
+                <div style="background:var(--border);border-radius:999px;height:8px;overflow:hidden;">
+                    <div style="height:100%;width:${auslastungPct}%;background:${auslastungPct > 80 ? '#dc2626' : auslastungPct > 50 ? '#f59e0b' : '#059669'};border-radius:999px;transition:width .4s;"></div>
+                </div>
             </div>
-            <div style="text-align:center;font-size:11px;opacity:.45;margin-top:4px;">${totalSeats ? Math.round(occupiedSeats / totalSeats * 100) : 0}% Auslastung</div>
         </div>`;
 
     // --- Raumauslastung ---
     const roomOccHtml = hasPermission(req, 'rooms.view') ? `
         <div class="card">
-            <h2 style="margin:0 0 16px 0;font-size:16px;">🏢 Raumauslastung</h2>
-            ${roomList.length === 0 ? '<p style="opacity:.5;font-size:13px;">Keine Räume.</p>' :
+            <div class="db-card-title">🏢 Raumauslastung</div>
+            ${roomList.length === 0 ? '<p class="db-empty">Keine Räume.</p>' :
                 roomList.map(r => {
                     const tot = r.seats.length, occ = r.seats.filter(s => s.name && s.name !== 'Frei').length;
                     const pct = tot ? Math.round(occ / tot * 100) : 0;
                     const c   = pct === 100 ? '#dc2626' : pct > 50 ? '#f59e0b' : '#059669';
-                    return `<div style="margin-bottom:10px;">
-                        <div style="display:flex;justify-content:space-between;font-size:13px;margin-bottom:3px;">
-                            <span><strong>${escapeHtml(r.abteilung)}</strong> <span style="opacity:.5;">${escapeHtml(r.roomnumber)}</span></span>
-                            <span style="color:${c};">${occ}/${tot}</span>
+                    return `<div class="db-room-row">
+                        <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:5px;">
+                            <span class="db-room-name">${escapeHtml(r.abteilung)} <span class="db-room-num">${escapeHtml(r.roomnumber)}</span></span>
+                            <span style="font-weight:700;color:${c};font-size:14px;">${occ}<span style="font-weight:400;opacity:.5;">/${tot}</span></span>
                         </div>
-                        <div style="background:var(--border);border-radius:999px;height:5px;overflow:hidden;">
+                        <div style="background:var(--border);border-radius:999px;height:6px;overflow:hidden;">
                             <div style="height:100%;width:${pct}%;background:${c};border-radius:999px;"></div>
                         </div>
                     </div>`;
@@ -3015,44 +3025,43 @@ app.get('/admin', requireAdmin, requirePermission('dashboard.view'), (req, res) 
     // --- Terminals ---
     const terminalsHtml = hasPermission(req, 'terminals.view') ? `
         <div class="card">
-            <h2 style="margin:0 0 16px 0;font-size:16px;">🖥️ Terminals</h2>
+            <div class="db-card-title">🖥️ Terminals</div>
             ${terminalList.length === 0
-                ? '<p style="opacity:.5;font-size:13px;">Keine Terminals. <a href="/admin/terminals">Anlegen →</a></p>'
+                ? '<p class="db-empty">Keine Terminals. <a href="/admin/terminals" style="color:var(--primary);">Anlegen →</a></p>'
                 : terminalList.map(t => {
                     const asgn = roomList.find(r => r.terminalId === t.id);
-                    const mc   = t.trmnlMode === 'webhook' ? '#059669' : t.trmnlMode === 'polling' ? '#6366f1' : '#6b7280';
+                    const mc   = t.trmnlMode === 'webhook' ? '#059669' : t.trmnlMode === 'polling' ? '#2563eb' : '#6b7280';
                     const hasStatus = !!(t.trmnlDeviceApiKey && t.trmnlDeviceMac);
-                    return `<div class="term-live-row" data-tid="${escapeHtml(t.id)}" data-interval="${t.statusRefreshInterval || 30}"
-                        style="padding:8px 10px;border:1px solid var(--border);border-radius:6px;font-size:13px;margin-bottom:6px;">
-                        <div style="display:flex;justify-content:space-between;align-items:center;">
-                            <div>
-                                <strong>${escapeHtml(t.name)}</strong>
-                                ${asgn ? `<span style="opacity:.5;margin-left:6px;">→ ${escapeHtml(asgn.abteilung)}</span>` : '<span style="opacity:.35;margin-left:6px;">nicht zugewiesen</span>'}
+                    return `<div class="term-live-row db-term-row" data-tid="${escapeHtml(t.id)}" data-interval="${t.statusRefreshInterval || 30}">
+                        <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;">
+                            <div style="min-width:0;">
+                                <div style="font-weight:600;font-size:15px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${escapeHtml(t.name)}</div>
+                                <div style="font-size:12px;opacity:.45;margin-top:2px;">${asgn ? escapeHtml(asgn.abteilung) : 'nicht zugewiesen'}</div>
                             </div>
-                            <span style="font-size:11px;padding:2px 7px;border-radius:999px;background:${mc}22;color:${mc};font-weight:600;">${escapeHtml(t.trmnlMode || 'none')}</span>
+                            <span style="flex-shrink:0;font-size:11px;padding:3px 9px;border-radius:999px;background:${mc}22;color:${mc};font-weight:700;letter-spacing:.02em;">${escapeHtml(t.trmnlMode || 'none')}</span>
                         </div>
-                        ${hasStatus ? '<div class="ts-status" style="margin-top:5px;font-size:12px;opacity:.6;"><span class="ts-batt">🔋 –</span>&ensp;<span class="ts-wifi">📶 –</span>&ensp;<span class="ts-sleep"></span></div>' : ''}
+                        ${hasStatus ? '<div class="ts-status db-ts-status"><span class="ts-batt">🔋 –</span><span class="ts-wifi">📶 –</span><span class="ts-sleep"></span></div>' : ''}
                     </div>`;
                 }).join('')}
         </div>` : '';
 
     // --- Schnellaktionen ---
     const quickLinks = [
-        hasPermission(req, 'rooms.create')    ? `<a href="/admin/rooms"     style="padding:8px 14px;border:1px solid var(--border);border-radius:6px;text-decoration:none;font-size:13px;">+ Raum</a>`     : '',
-        hasPermission(req, 'terminals.create')? `<a href="/admin/terminals" style="padding:8px 14px;border:1px solid var(--border);border-radius:6px;text-decoration:none;font-size:13px;">+ Terminal</a>` : '',
-        hasPermission(req, 'admins.create')   ? `<a href="/admin/admins"    style="padding:8px 14px;border:1px solid var(--border);border-radius:6px;text-decoration:none;font-size:13px;">+ Admin</a>`    : '',
-        hasPermission(req, 'links.view')      ? `<a href="/admin/links"     style="padding:8px 14px;border:1px solid var(--border);border-radius:6px;text-decoration:none;font-size:13px;">🔗 Raumlinks</a>` : '',
+        hasPermission(req, 'rooms.create')    ? `<a href="/admin/rooms"     class="db-btn">＋ Raum</a>`     : '',
+        hasPermission(req, 'terminals.create')? `<a href="/admin/terminals" class="db-btn">＋ Terminal</a>` : '',
+        hasPermission(req, 'admins.create')   ? `<a href="/admin/admins"    class="db-btn">＋ Admin</a>`    : '',
+        hasPermission(req, 'links.view')      ? `<a href="/admin/links"     class="db-btn">🔗 Raumlinks</a>` : '',
     ].filter(Boolean);
     const quickActionsHtml = quickLinks.length ? `
         <div class="card">
-            <h2 style="margin:0 0 14px 0;font-size:16px;">⚡ Schnellaktionen</h2>
-            <div style="display:flex;flex-wrap:wrap;gap:8px;">${quickLinks.join('')}</div>
+            <div class="db-card-title">⚡ Schnellaktionen</div>
+            <div style="display:flex;flex-wrap:wrap;gap:10px;">${quickLinks.join('')}</div>
         </div>` : '';
 
     // --- Meine Rechte ---
     const myPermsHtml = `
         <div class="card">
-            <h2 style="margin:0 0 14px 0;font-size:16px;">👤 Meine Rechte</h2>
+            <div class="db-card-title">👤 Meine Rechte</div>
             ${formatAdminPermissions(currentAdmin)}
         </div>`;
 
@@ -3061,13 +3070,13 @@ app.get('/admin', requireAdmin, requirePermission('dashboard.view'), (req, res) 
         const cfg = microsoftConfig, en = appConfig.microsoftLoginEnabled;
         const ok  = !!(cfg.clientID && cfg.tenantID && cfg.clientSecret && cfg.callbackURL);
         return `<div class="card">
-            <h2 style="margin:0 0 14px 0;font-size:16px;">🔷 Microsoft / Entra ID</h2>
-            <div style="display:flex;flex-direction:column;gap:7px;font-size:13px;">
-                <div style="display:flex;justify-content:space-between;padding:7px 10px;border:1px solid var(--border);border-radius:6px;">
-                    <span>Login aktiviert</span><span style="font-weight:600;color:${en ? '#059669' : '#6b7280'};">${en ? '✅ Ja' : '❌ Nein'}</span>
+            <div class="db-card-title">🔷 Microsoft / Entra ID</div>
+            <div style="display:flex;flex-direction:column;gap:8px;">
+                <div class="db-info-row">
+                    <span>Login aktiviert</span><span style="font-weight:700;color:${en ? '#059669' : '#6b7280'};">${en ? '✅ Ja' : '❌ Nein'}</span>
                 </div>
-                <div style="display:flex;justify-content:space-between;padding:7px 10px;border:1px solid var(--border);border-radius:6px;">
-                    <span>Konfiguriert</span><span style="font-weight:600;color:${ok ? '#059669' : '#f59e0b'};">${ok ? '✅ Vollständig' : '⚠️ Unvollständig'}</span>
+                <div class="db-info-row">
+                    <span>Konfiguriert</span><span style="font-weight:700;color:${ok ? '#059669' : '#f59e0b'};">${ok ? '✅ Vollständig' : '⚠️ Unvollständig'}</span>
                 </div>
             </div>
         </div>`;
@@ -3076,24 +3085,50 @@ app.get('/admin', requireAdmin, requirePermission('dashboard.view'), (req, res) 
     // --- Admins ---
     const adminsHtml = hasPermission(req, 'admins.view') ? `
         <div class="card">
-            <h2 style="margin:0 0 14px 0;font-size:16px;">👥 Admins</h2>
-            <div style="display:flex;flex-direction:column;gap:6px;">
+            <div class="db-card-title">👥 Admins</div>
+            <div style="display:flex;flex-direction:column;gap:8px;">
                 ${admins.map(a => `
-                <div style="display:flex;justify-content:space-between;align-items:center;padding:7px 10px;border:1px solid var(--border);border-radius:6px;font-size:13px;">
-                    <span>${escapeHtml(a.displayName || a.username)}${a.master ? ' <span class="badge badge-master" style="font-size:10px;">MASTER</span>' : ''}</span>
-                    <span style="opacity:.4;">${a.microsoft ? 'Microsoft' : 'Lokal'}</span>
+                <div class="db-info-row">
+                    <span style="font-weight:500;">${escapeHtml(a.displayName || a.username)}${a.master ? ' <span class="badge badge-master" style="font-size:10px;vertical-align:middle;">MASTER</span>' : ''}</span>
+                    <span style="opacity:.4;font-size:13px;">${a.microsoft ? 'Microsoft' : 'Lokal'}</span>
                 </div>`).join('')}
             </div>
         </div>` : '';
 
     const content = `
+        <style>
+        .db-hero { grid-column: 1 / -1; }
+        .db-hero-label { font-size:12px;font-weight:600;text-transform:uppercase;letter-spacing:.07em;opacity:.45;margin-bottom:16px; }
+        .db-stat-grid { display:grid;grid-template-columns:repeat(2,1fr);gap:12px; }
+        @media(min-width:500px){ .db-stat-grid{grid-template-columns:repeat(4,1fr);} }
+        .db-stat-tile { text-align:center;padding:18px 10px;border:1px solid var(--border);border-radius:12px;background:var(--bg); }
+        .db-stat-num { font-size:clamp(28px,3.5vw,52px);font-weight:800;line-height:1; }
+        .db-stat-sub { font-size:13px;opacity:.5;margin-top:6px; }
+        .db-card-title { font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.07em;opacity:.45;margin-bottom:18px; }
+        .db-empty { opacity:.45;font-size:14px;margin:0; }
+        .db-room-row { margin-bottom:14px; }
+        .db-room-row:last-child { margin-bottom:0; }
+        .db-room-name { font-weight:600;font-size:15px; }
+        .db-room-num { font-weight:400;opacity:.45;font-size:13px;margin-left:5px; }
+        .db-term-row { padding:12px 14px;border:1px solid var(--border);border-radius:10px;margin-bottom:8px; }
+        .db-term-row:last-child { margin-bottom:0; }
+        .db-ts-status { margin-top:8px;font-size:13px;opacity:.55;display:flex;gap:14px; }
+        .db-btn { display:inline-block;padding:10px 18px;border:1.5px solid var(--border);border-radius:10px;text-decoration:none;font-size:14px;font-weight:500;color:var(--text);transition:border-color .15s,background .15s; }
+        .db-btn:hover { border-color:var(--primary);color:var(--primary); }
+        .db-info-row { display:flex;justify-content:space-between;align-items:center;padding:10px 14px;border:1px solid var(--border);border-radius:10px;font-size:14px; }
+        .db-grid { display:grid;grid-template-columns:1fr;gap:16px;align-items:start; }
+        @media(min-width:600px){ .db-grid{grid-template-columns:repeat(2,1fr);gap:20px;} }
+        @media(min-width:1100px){ .db-grid{grid-template-columns:repeat(3,1fr);gap:24px;} }
+        @media(min-width:1500px){ .db-grid{grid-template-columns:repeat(4,1fr);gap:28px;} }
+        .card { border-radius:16px;padding:clamp(16px,2.5vw,28px); }
+        </style>
         <div class="topbar">
             <div>
                 <h1 class="page-title">Dashboard</h1>
                 <div class="muted">Angemeldet als ${escapeHtml(currentAdmin?.displayName || currentAdmin?.username || 'Admin')} ${currentAdmin?.master ? '<span class="badge badge-master">MASTER</span>' : ''}</div>
             </div>
         </div>
-        <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(340px,1fr));gap:16px;align-items:start;">
+        <div class="db-grid">
             ${statsHtml}
             ${roomOccHtml}
             ${terminalsHtml}
