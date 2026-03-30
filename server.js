@@ -3547,14 +3547,14 @@ app.post('/admin/save-sleep-schedule', requireAdmin, requirePermission('rooms.ed
     const roomId = String(req.body.roomId || '').trim();
     const room = getRoom(roomId);
     if (!room) return res.status(404).json({ error: 'Raum nicht gefunden' });
-    if (!room.trmnlDeviceApiKey || !room.trmnlDeviceMac) return res.status(400).json({ error: 'Device API Key und MAC-Adresse fehlen' });
+    if (!room.trmnlDeviceApiKey || !room.trmnlDeviceMac) return res.status(400).json({ error: 'Account API Key und MAC-Adresse fehlen' });
 
     try {
-        // Account Key für Geräteliste, Device Access Token als Fallback
-        const authHeader = room.trmnlDeviceAccessToken
-            ? { 'access-token': room.trmnlDeviceAccessToken }
-            : { 'Authorization': `Bearer ${room.trmnlDeviceApiKey}` };
-        const headers = { ...authHeader, 'Content-Type': 'application/json' };
+        // Für /api/devices (GET + PATCH) immer Account API Key mit Bearer
+        const headers = {
+            'Authorization': `Bearer ${room.trmnlDeviceApiKey}`,
+            'Content-Type': 'application/json'
+        };
 
         // Gerät per MAC finden
         const listRes = await fetch('https://usetrmnl.com/api/devices', { headers });
@@ -3576,28 +3576,30 @@ app.post('/admin/save-sleep-schedule', requireAdmin, requirePermission('rooms.ed
         const sleepStart = room.trmnlSleepStart || '19:00';
         const sleepEnd   = room.trmnlSleepEnd   || '07:00';
 
-        // Refresh-Rate → Millisekunden (TRMNL erwartet ms)
+        // Refresh-Rate → Sekunden (TRMNL erwartet Sekunden)
         const val  = parseInt(room.trmnlRefreshValue) || 15;
         const unit = room.trmnlRefreshUnit || 'minutes';
-        const refreshMs = unit === 'hours' ? val * 3600 : val * 60; // Sekunden
+        const refreshSec = unit === 'hours' ? val * 3600 : val * 60;
+
+        const patchBody = {
+            device: {
+                sleep_mode_enabled: true,
+                sleep_start_time: toMinutes(sleepStart),
+                sleep_end_time:   toMinutes(sleepEnd),
+                refresh_rate:     refreshSec
+            }
+        };
 
         const patchRes = await fetch(`https://usetrmnl.com/api/devices/${device.id}`, {
             method: 'PATCH',
             headers,
-            body: JSON.stringify({
-                device: {
-                    sleep_mode_enabled: true,
-                    sleep_start_time: toMinutes(sleepStart),
-                    sleep_end_time:   toMinutes(sleepEnd),
-                    refresh_rate:     refreshMs
-                }
-            })
+            body: JSON.stringify(patchBody)
         });
 
         const text = await patchRes.text();
         let body;
         try { body = JSON.parse(text); } catch(e) { body = text; }
-        return res.json({ status: patchRes.status, body, device_id: device.id, sleep_start: sleepStart, sleep_end: sleepEnd, refresh_rate_s: refreshMs });
+        return res.json({ status: patchRes.status, body, device_id: device.id, sent: patchBody.device });
     } catch (err) {
         return res.json({ error: err.message });
     }
