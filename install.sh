@@ -36,7 +36,8 @@ echo "║         HTTPS / SSL Einrichtung          ║"
 echo "╚══════════════════════════════════════════╝"
 echo ""
 echo "Möchtest du HTTPS mit Let's Encrypt einrichten?"
-echo "  → Voraussetzung: Eine Domain die auf diesen Server zeigt (A-Record)"
+echo "  → Voraussetzung: Eine Domain mit A-Record auf diesen Server"
+echo "  → Port 443 muss vom Router auf diesen Server weitergeleitet sein"
 echo "  → Ohne HTTPS läuft die App über HTTP auf Port 80"
 echo ""
 
@@ -78,20 +79,39 @@ fi
 echo ""
 
 # ──────────────────────────────────────────────
-# Pakete installieren
+# Basispakete + Firewall
 # ──────────────────────────────────────────────
-echo "==> Pakete werden installiert..."
+echo "==> Basispakete werden installiert..."
 sudo apt-get update -qq
 sudo apt-get install -y curl ca-certificates gnupg git ufw
 
-# ──────────────────────────────────────────────
-# Firewall konfigurieren
-# ──────────────────────────────────────────────
 echo "==> Firewall wird konfiguriert..."
 sudo ufw allow OpenSSH
 sudo ufw allow 80/tcp
 sudo ufw allow 443/tcp
 sudo ufw --force enable
+
+# ──────────────────────────────────────────────
+# Let's Encrypt – ZUERST, bevor alles andere läuft
+# ──────────────────────────────────────────────
+if [ "$HTTPS_ENABLED" = true ]; then
+    echo ""
+    echo "==> Certbot wird installiert..."
+    sudo apt-get install -y certbot
+
+    echo "==> Laufenden Service stoppen falls vorhanden..."
+    sudo systemctl stop ${SERVICE_NAME} 2>/dev/null || true
+
+    echo "==> SSL-Zertifikat wird beantragt (Port 80)..."
+    sudo certbot certonly --standalone \
+        -d "$DOMAIN" \
+        --email "$LE_EMAIL" \
+        --agree-tos \
+        --non-interactive
+
+    echo ""
+    echo "✅ Zertifikat erhalten: /etc/letsencrypt/live/${DOMAIN}/"
+fi
 
 # ──────────────────────────────────────────────
 # Node.js installieren
@@ -134,13 +154,13 @@ echo "==> npm install läuft..."
 npm install --omit=dev
 
 # ──────────────────────────────────────────────
-# Node.js Berechtigung für Ports unter 1024
+# Node.js Portberechtigung (80/443 ohne root)
 # ──────────────────────────────────────────────
 echo "==> Node.js Portberechtigung wird gesetzt..."
 sudo setcap cap_net_bind_service=+ep "$(readlink -f "$(which node)")"
 
 # ──────────────────────────────────────────────
-# systemd Service erstellen
+# systemd Service
 # ──────────────────────────────────────────────
 echo "==> systemd Service wird erstellt..."
 
@@ -174,7 +194,7 @@ sudo systemctl daemon-reload
 sudo systemctl enable ${SERVICE_NAME}
 
 # ──────────────────────────────────────────────
-# sudoers – Befehle ohne Passwort
+# sudoers
 # ──────────────────────────────────────────────
 echo "==> sudoers Eintrag wird erstellt..."
 SYSTEMCTL_BIN=$(readlink -f "$(which systemctl)")
@@ -192,29 +212,6 @@ if sudo visudo -cf "$SUDOERS_FILE"; then
 else
     echo "==> WARNUNG: sudoers Syntax-Fehler, wird entfernt"
     sudo rm -f "$SUDOERS_FILE"
-fi
-
-# ──────────────────────────────────────────────
-# Let's Encrypt
-# ──────────────────────────────────────────────
-if [ "$HTTPS_ENABLED" = true ]; then
-    echo ""
-    echo "==> Certbot wird installiert..."
-    sudo apt-get install -y certbot
-
-    echo "==> Laufenden Service stoppen (Port 443 freigeben)..."
-    sudo systemctl stop ${SERVICE_NAME} 2>/dev/null || true
-
-    echo "==> SSL-Zertifikat wird beantragt..."
-    sudo certbot certonly --standalone \
-        --preferred-challenges tls-alpn-01 \
-        -d "$DOMAIN" \
-        --email "$LE_EMAIL" \
-        --agree-tos \
-        --non-interactive
-
-    echo ""
-    echo "✅ Zertifikat erhalten: /etc/letsencrypt/live/${DOMAIN}/"
 fi
 
 # ──────────────────────────────────────────────
@@ -249,7 +246,7 @@ else
 fi
 
 echo ""
-echo "Update einspielen:"
+echo "Update:"
 echo "  cd ${APP_DIR} && git pull && npm install --omit=dev && sudo systemctl restart ${SERVICE_NAME}"
 echo ""
 echo "Logs:"
