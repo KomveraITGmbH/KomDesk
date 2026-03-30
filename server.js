@@ -3054,8 +3054,8 @@ app.get('/admin', requireAdmin, requirePermission('dashboard.view'), (req, res) 
         </div>
 
         <!-- Config Sidebar -->
-        <div id="configOverlay" onclick="closeConfig()" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.35);z-index:200;"></div>
-        <div id="configPanel" style="position:fixed;top:0;right:0;width:300px;height:100%;background:var(--card);border-left:1px solid var(--border);z-index:201;flex-direction:column;box-shadow:-6px 0 24px rgba(0,0,0,.15);display:none;">
+        <div id="configOverlay" onclick="closeConfig()" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.4);z-index:9998;"></div>
+        <div id="configPanel" style="position:fixed;top:0;right:0;width:300px;height:100%;background:var(--card-bg);border-left:1px solid var(--border);z-index:9999;flex-direction:column;box-shadow:-6px 0 24px rgba(0,0,0,.25);display:none;">
             <div style="padding:18px 18px 12px;border-bottom:1px solid var(--border);display:flex;justify-content:space-between;align-items:center;flex-shrink:0;">
                 <div>
                     <div style="font-weight:700;font-size:15px;">Widgets</div>
@@ -3212,13 +3212,18 @@ app.get('/admin', requireAdmin, requirePermission('dashboard.view'), (req, res) 
         });
 
         function openConfig() {
+            var overlay = document.getElementById('configOverlay');
+            var panel   = document.getElementById('configPanel');
+            // Portal: move to body so no parent overflow/z-index clips the panel
+            if (overlay.parentNode !== document.body) document.body.appendChild(overlay);
+            if (panel.parentNode   !== document.body) document.body.appendChild(panel);
             buildCatalog();
-            document.getElementById('configOverlay').style.display='block';
-            document.getElementById('configPanel').style.display='flex';
+            overlay.style.display = 'block';
+            panel.style.display   = 'flex';
         }
         function closeConfig() {
-            document.getElementById('configOverlay').style.display='none';
-            document.getElementById('configPanel').style.display='none';
+            document.getElementById('configOverlay').style.display = 'none';
+            document.getElementById('configPanel').style.display   = 'none';
         }
 
         function fetchTerminalStatus(tid, row) {
