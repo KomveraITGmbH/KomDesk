@@ -10,6 +10,62 @@ const multer = require('multer');
 const sharp = require('sharp');
 const helmet = require('helmet');
 const rateLimit = require('express-rate-limit');
+const os = require('os');
+const { exec } = require('child_process');
+
+// ---- Server-Log-Buffer ----
+const _logBuffer = [];
+function _pushLog(level, args) {
+    const msg = args.map(a => (a && typeof a === 'object') ? JSON.stringify(a) : String(a)).join(' ');
+    _logBuffer.push({ t: Date.now(), level, msg });
+    if (_logBuffer.length > 200) _logBuffer.shift();
+}
+const _origLog  = console.log.bind(console);
+const _origErr  = console.error.bind(console);
+const _origWarn = console.warn.bind(console);
+console.log   = (...a) => { _pushLog('info',  a); _origLog(...a);  };
+console.error = (...a) => { _pushLog('error', a); _origErr(...a);  };
+console.warn  = (...a) => { _pushLog('warn',  a); _origWarn(...a); };
+
+// ---- CPU-Sampling (alle 3 Sek.) ----
+let _cpuPct  = 0;
+let _cpuPrev = null;
+function _sampleCpu() {
+    const cpus = os.cpus();
+    const curr = cpus.reduce((acc, cpu) => {
+        for (const [k, v] of Object.entries(cpu.times)) acc[k] = (acc[k] || 0) + v;
+        return acc;
+    }, {});
+    if (_cpuPrev) {
+        const idle  = curr.idle - _cpuPrev.idle;
+        const total = Object.values(curr).reduce((s, v) => s + v, 0)
+                    - Object.values(_cpuPrev).reduce((s, v) => s + v, 0);
+        _cpuPct = total > 0 ? Math.round((1 - idle / total) * 100) : 0;
+    }
+    _cpuPrev = curr;
+}
+setInterval(_sampleCpu, 3000);
+_sampleCpu();
+
+function getServerStats() {
+    const mem   = process.memoryUsage();
+    const total = os.totalmem();
+    const free  = os.freemem();
+    const used  = total - free;
+    return {
+        uptime:   Math.floor(process.uptime()),
+        cpu:      _cpuPct,
+        ramPct:   Math.round(used / total * 100),
+        ramUsed:  Math.round(used  / 1024 / 1024),
+        ramTotal: Math.round(total / 1024 / 1024),
+        heapUsed: Math.round(mem.heapUsed  / 1024 / 1024),
+        heapTotal:Math.round(mem.heapTotal / 1024 / 1024),
+        rss:      Math.round(mem.rss       / 1024 / 1024),
+        nodeVer:  process.version,
+        platform: os.platform() + ' ' + os.arch(),
+        hostname: os.hostname(),
+    };
+}
 
 const app = express();
 const PORT = 3000;
@@ -166,6 +222,16 @@ const PERMISSION_GROUPS = [
                 key: 'system.logo',
                 label: 'Logo verwalten',
                 description: 'Darf das Logo der Anwendung hochladen und ersetzen.'
+            },
+            {
+                key: 'server.view',
+                label: 'Server-Status anzeigen',
+                description: 'Darf Laufzeit, Speicher und Logs des DeskView-Servers sehen.'
+            },
+            {
+                key: 'server.restart',
+                label: 'Server neu starten',
+                description: 'Darf den DeskView-Server-Prozess neu starten.'
             }
         ]
     },
@@ -3095,6 +3161,67 @@ app.get('/admin', requireAdmin, requirePermission('dashboard.view'), (req, res) 
             </div>
         </div>` : '';
 
+    // --- Server-Status ---
+    const serverHtml = hasPermission(req, 'server.view') ? `
+        <div class="card db-hero" style="grid-column:1/-1;">
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:20px;flex-wrap:wrap;gap:10px;">
+                <div class="db-card-title" style="margin:0;">⚙️ DeskView Server</div>
+                <div style="display:flex;gap:8px;flex-wrap:wrap;">
+                    <button onclick="srvFetchStatus()" style="padding:6px 14px;border:1.5px solid var(--border);border-radius:8px;background:transparent;color:var(--text);font-size:12px;font-weight:600;cursor:pointer;">📋 systemctl status</button>
+                    ${hasPermission(req, 'server.restart') ? `
+                    <form method="POST" action="/admin/server/restart" onsubmit="return confirm('Server komvera-deskview wirklich neu starten?');" style="margin:0;">
+                        ${csrfField(req)}
+                        <button type="submit" style="padding:6px 14px;border:1.5px solid #dc2626;border-radius:8px;background:transparent;color:#dc2626;font-size:12px;font-weight:600;cursor:pointer;">↺ Neu starten</button>
+                    </form>` : ''}
+                </div>
+            </div>
+            <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:16px;">
+                <div>
+                    <div style="font-size:12px;font-weight:600;opacity:.45;text-transform:uppercase;letter-spacing:.06em;margin-bottom:10px;">System</div>
+                    <div style="display:flex;flex-direction:column;gap:7px;">
+                        <div class="db-info-row"><span>CPU Auslastung</span>
+                            <span style="display:flex;align-items:center;gap:8px;">
+                                <span style="width:80px;height:6px;background:var(--border);border-radius:999px;overflow:hidden;display:inline-block;">
+                                    <span id="srv-cpu-bar" style="display:block;height:100%;width:0%;background:#2563eb;border-radius:999px;transition:width .5s;"></span>
+                                </span>
+                                <span id="srv-cpu" style="font-weight:700;min-width:36px;text-align:right;">–</span>
+                            </span>
+                        </div>
+                        <div class="db-info-row"><span>RAM Auslastung</span>
+                            <span style="display:flex;align-items:center;gap:8px;">
+                                <span style="width:80px;height:6px;background:var(--border);border-radius:999px;overflow:hidden;display:inline-block;">
+                                    <span id="srv-ram-bar" style="display:block;height:100%;width:0%;background:#059669;border-radius:999px;transition:width .5s;"></span>
+                                </span>
+                                <span id="srv-ram" style="font-weight:700;min-width:36px;text-align:right;">–</span>
+                            </span>
+                        </div>
+                        <div class="db-info-row"><span>RAM gesamt</span><span id="srv-ram-detail" style="font-weight:600;opacity:.7;">–</span></div>
+                        <div class="db-info-row"><span>Host</span><span id="srv-host" style="font-weight:600;opacity:.6;font-size:12px;">–</span></div>
+                    </div>
+                </div>
+                <div>
+                    <div style="font-size:12px;font-weight:600;opacity:.45;text-transform:uppercase;letter-spacing:.06em;margin-bottom:10px;">Prozess</div>
+                    <div style="display:flex;flex-direction:column;gap:7px;">
+                        <div class="db-info-row"><span>Laufzeit</span><span id="srv-uptime" style="font-weight:600;">–</span></div>
+                        <div class="db-info-row"><span>Node.js Heap</span><span id="srv-heap" style="font-weight:600;">–</span></div>
+                        <div class="db-info-row"><span>RSS</span><span id="srv-rss" style="font-weight:600;">–</span></div>
+                        <div class="db-info-row"><span>Node.js</span><span id="srv-node" style="font-weight:600;opacity:.6;">–</span></div>
+                    </div>
+                </div>
+                <div style="grid-column:1/-1;">
+                    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
+                        <div style="font-size:12px;font-weight:600;opacity:.45;text-transform:uppercase;letter-spacing:.06em;">Server-Log</div>
+                        <span id="srv-log-age" style="font-size:11px;opacity:.3;"></span>
+                    </div>
+                    <div id="srv-log" style="background:var(--bg);border:1px solid var(--border);border-radius:10px;padding:10px 14px;height:200px;overflow-y:auto;font-family:monospace;font-size:12px;line-height:1.6;white-space:pre-wrap;word-break:break-all;"></div>
+                    <div id="srv-systemctl-wrap" style="display:none;margin-top:12px;">
+                        <div style="font-size:12px;font-weight:600;opacity:.45;text-transform:uppercase;letter-spacing:.06em;margin-bottom:8px;">systemctl status komvera-deskview</div>
+                        <div id="srv-systemctl" style="background:var(--bg);border:1px solid var(--border);border-radius:10px;padding:10px 14px;max-height:220px;overflow-y:auto;font-family:monospace;font-size:12px;line-height:1.6;white-space:pre-wrap;word-break:break-all;"></div>
+                    </div>
+                </div>
+            </div>
+        </div>` : '';
+
     const content = `
         <style>
         .db-hero { grid-column: 1 / -1; }
@@ -3136,8 +3263,10 @@ app.get('/admin', requireAdmin, requirePermission('dashboard.view'), (req, res) 
             ${myPermsHtml}
             ${microsoftHtml}
             ${adminsHtml}
+            ${serverHtml}
         </div>
         <script>
+        // ---- Terminal-Status ----
         var _tsTimers = {};
         function fetchTerminalStatus(tid, row) {
             fetch('/admin/terminals/status/' + encodeURIComponent(tid))
@@ -3154,7 +3283,73 @@ app.get('/admin', requireAdmin, requirePermission('dashboard.view'), (req, res) 
                 })
                 .catch(function(){});
         }
+
+        // ---- Server-Stats ----
+        function fmtUptime(s) {
+            var d = Math.floor(s/86400), h = Math.floor((s%86400)/3600), m = Math.floor((s%3600)/60), sc = s%60;
+            if (d>0) return d+'d '+h+'h '+m+'m';
+            if (h>0) return h+'h '+m+'m '+sc+'s';
+            return m+'m '+sc+'s';
+        }
+        function fmtLog(logs) {
+            return logs.map(function(l) {
+                var t = new Date(l.t).toLocaleTimeString('de-DE');
+                var c = l.level==='error' ? '\\x1b[31m' : l.level==='warn' ? '\\x1b[33m' : '';
+                var pfx = '['+t+'] ['+l.level.toUpperCase()+'] ';
+                return pfx + l.msg;
+            }).join('\\n');
+        }
+        function srvFetch() {
+            fetch('/admin/server/stats')
+                .then(function(r){ return r.json(); })
+                .then(function(d) {
+                    var cpuEl = document.getElementById('srv-cpu');
+                    var cpuBar = document.getElementById('srv-cpu-bar');
+                    var ramEl = document.getElementById('srv-ram');
+                    var ramBar = document.getElementById('srv-ram-bar');
+                    var ramDet = document.getElementById('srv-ram-detail');
+                    var upEl  = document.getElementById('srv-uptime');
+                    var heapEl= document.getElementById('srv-heap');
+                    var rssEl = document.getElementById('srv-rss');
+                    var nodeEl= document.getElementById('srv-node');
+                    var hostEl= document.getElementById('srv-host');
+                    var logEl = document.getElementById('srv-log');
+                    var ageEl = document.getElementById('srv-log-age');
+                    if (cpuEl)  cpuEl.textContent  = d.cpu + '%';
+                    if (cpuBar) { cpuBar.style.width = d.cpu+'%'; cpuBar.style.background = d.cpu>80?'#dc2626':d.cpu>50?'#f59e0b':'#2563eb'; }
+                    if (ramEl)  ramEl.textContent  = d.ramPct + '%';
+                    if (ramBar) { ramBar.style.width = d.ramPct+'%'; ramBar.style.background = d.ramPct>85?'#dc2626':d.ramPct>60?'#f59e0b':'#059669'; }
+                    if (ramDet) ramDet.textContent = d.ramUsed + ' MB / ' + d.ramTotal + ' MB';
+                    if (upEl)   upEl.textContent   = fmtUptime(d.uptime);
+                    if (heapEl) heapEl.textContent = d.heapUsed + ' / ' + d.heapTotal + ' MB';
+                    if (rssEl)  rssEl.textContent  = d.rss + ' MB';
+                    if (nodeEl) nodeEl.textContent = d.nodeVer;
+                    if (hostEl) hostEl.textContent = d.hostname + ' (' + d.platform + ')';
+                    if (logEl && d.logs) {
+                        var atBottom = logEl.scrollTop + logEl.clientHeight >= logEl.scrollHeight - 10;
+                        logEl.textContent = d.logs.map(function(l){
+                            return '['+new Date(l.t).toLocaleTimeString('de-DE')+'] ['+l.level.toUpperCase()+'] '+l.msg;
+                        }).join('\\n');
+                        if (atBottom) logEl.scrollTop = logEl.scrollHeight;
+                    }
+                    if (ageEl) ageEl.textContent = 'Aktualisiert ' + new Date().toLocaleTimeString('de-DE');
+                })
+                .catch(function(){});
+        }
+        function srvFetchStatus() {
+            var wrap = document.getElementById('srv-systemctl-wrap');
+            var el   = document.getElementById('srv-systemctl');
+            if (!el) return;
+            if (wrap) wrap.style.display = 'block';
+            el.textContent = 'Wird geladen…';
+            fetch('/admin/server/systemctl-status')
+                .then(function(r){ return r.json(); })
+                .then(function(d){ el.textContent = d.output || '(keine Ausgabe)'; })
+                .catch(function(){ el.textContent = 'Fehler beim Laden.'; });
+        }
+
         document.addEventListener('DOMContentLoaded', function() {
+            // Terminal live-status
             document.querySelectorAll('.term-live-row').forEach(function(row) {
                 var tid = row.getAttribute('data-tid');
                 if (!tid) return;
@@ -3163,6 +3358,11 @@ app.get('/admin', requireAdmin, requirePermission('dashboard.view'), (req, res) 
                 if (_tsTimers[tid]) clearInterval(_tsTimers[tid]);
                 _tsTimers[tid] = setInterval(function() { fetchTerminalStatus(tid, row); }, ms);
             });
+            // Server-Stats alle 5 Sek.
+            if (document.getElementById('srv-cpu')) {
+                srvFetch();
+                setInterval(srvFetch, 5000);
+            }
         });
         </script>
     `;
@@ -3762,6 +3962,31 @@ app.get('/admin/terminals/status/:terminalId', requireAdmin, requirePermission('
     } catch (err) {
         return res.json({ error: err.message });
     }
+});
+
+app.get('/admin/server/stats', requireAdmin, requirePermission('server.view'), (req, res) => {
+    res.json({
+        ...getServerStats(),
+        logs: _logBuffer.slice(-80).reverse()
+    });
+});
+
+app.get('/admin/server/systemctl-status', requireAdmin, requirePermission('server.view'), (req, res) => {
+    exec('sudo systemctl status komvera-deskview --no-pager -l', { timeout: 5000 }, (err, stdout, stderr) => {
+        res.json({ output: (stdout || '') + (stderr || '') });
+    });
+});
+
+app.post('/admin/server/restart', requireAdmin, requirePermission('server.restart'), requireCsrf, (req, res) => {
+    const admin = getCurrentAdmin(req);
+    console.log(`[Server] Neustart angefordert von Admin: ${admin?.username || '?'}`);
+    res.json({ ok: true });
+    exec('sudo systemctl restart komvera-deskview', (err) => {
+        if (err) {
+            console.warn('[Server] systemctl restart fehlgeschlagen, fallback process.exit');
+            setTimeout(() => process.exit(0), 200);
+        }
+    });
 });
 
 app.post('/admin/save-sleep-schedule', requireAdmin, requirePermission('terminals.edit'), requireCsrf, async (req, res) => {
