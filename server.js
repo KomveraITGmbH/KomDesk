@@ -117,7 +117,7 @@ app.use(helmet({
 const loginLimiter = rateLimit({
     windowMs: 15 * 60 * 1000,
     max: 10,
-    message: 'Zu viele Login-Versuche. Bitte 15 Minuten warten.',
+    message: () => loadLocale().errors?.tooManyLogins || 'Too many login attempts.',
     standardHeaders: true,
     legacyHeaders: false,
     validate: { xForwardedForHeader: false },
@@ -126,7 +126,7 @@ const loginLimiter = rateLimit({
 const setupLimiter = rateLimit({
     windowMs: 60 * 60 * 1000,
     max: 5,
-    message: 'Zu viele Setup-Versuche. Bitte 1 Stunde warten.',
+    message: () => loadLocale().errors?.tooManySetups || 'Too many setup attempts.',
     standardHeaders: true,
     legacyHeaders: false,
     validate: { xForwardedForHeader: false },
@@ -135,7 +135,7 @@ const setupLimiter = rateLimit({
 const sshTokenLimiter = rateLimit({
     windowMs: 60 * 1000,
     max: 10,
-    message: 'Zu viele SSH-Token-Anfragen.',
+    message: () => loadLocale().errors?.tooManySshTokens || 'Too many SSH token requests.',
     standardHeaders: true,
     legacyHeaders: false,
     validate: { xForwardedForHeader: false },
@@ -334,6 +334,7 @@ const DEFAULT_ROOMS = {
 const DEFAULT_CONFIG = {
     sessionSecret: '',
     seatClearInterval: 'never',
+    language: 'de',
     microsoftLoginEnabled: false,
     microsoft: {
         clientID: '',
@@ -519,7 +520,7 @@ const upload = multer({
         ];
 
         if (!allowedMimeTypes.includes(file.mimetype)) {
-            return cb(new Error('Nur PNG, JPG, JPEG oder WEBP sind erlaubt.'));
+            return cb(new Error(loadLocale().errors?.uploadFileTypeError || 'Only PNG, JPG, JPEG or WEBP are allowed.'));
         }
 
         cb(null, true);
@@ -541,9 +542,10 @@ function escapeHtml(value) {
 }
 
 function validatePasswordStrength(password) {
-    if (password.length < 8)          return 'Das Passwort muss mindestens 8 Zeichen lang sein';
-    if (!/[A-Z]/.test(password))      return 'Das Passwort muss mindestens einen Großbuchstaben enthalten';
-    if (!/[0-9]/.test(password))      return 'Das Passwort muss mindestens eine Zahl enthalten';
+    const L = loadLocale();
+    if (password.length < 8)          return L.errors?.passwordTooShort;
+    if (!/[A-Z]/.test(password))      return L.errors?.passwordNeedsUppercase;
+    if (!/[0-9]/.test(password))      return L.errors?.passwordNeedsNumber;
     return null;
 }
 
@@ -566,7 +568,8 @@ function csrfField(req) {
 function requireCsrf(req, res, next) {
     const token = String(req.body._csrf || req.query._csrf || '');
     if (!token || !req.session.csrfToken || token !== req.session.csrfToken) {
-        return res.status(403).send('Ungültige Anfrage (CSRF-Fehler). Bitte Seite neu laden.');
+        const L = loadLocale();
+        return res.status(403).send(L.errors?.csrfInvalid);
     }
     next();
 }
@@ -574,6 +577,15 @@ function requireCsrf(req, res, next) {
 function ensurePublicDir() {
     if (!fs.existsSync(PUBLIC_DIR)) {
         fs.mkdirSync(PUBLIC_DIR, { recursive: true });
+    }
+}
+
+function applyDefaultLang() {
+    const allowed = ['de', 'en'];
+    const envLang = (process.env.DEFAULT_LANG || '').toLowerCase();
+    if (!appConfig.language && allowed.includes(envLang)) {
+        appConfig.language = envLang;
+        saveAppConfig();
     }
 }
 
@@ -733,11 +745,12 @@ function requirePermission(permission) {
             return next();
         }
 
+        const L2 = loadLocale();
         return res.status(403).send(`
             <html lang="de">
             <head>
                 <meta charset="UTF-8">
-                <title>Keine Berechtigung</title>
+                <title>${escapeHtml(L2.errors?.noPermission || 'No Permission')}</title>
                 <style>
                     body {
                         font-family: Arial, sans-serif;
@@ -762,9 +775,9 @@ function requirePermission(permission) {
                 </style>
             </head>
             <body>
-                <h2>Keine Berechtigung</h2>
-                <p>Dir fehlt die Berechtigung: ${escapeHtml(permission)}</p>
-                <p><a href="/admin">Zurück zum Adminbereich</a></p>
+                <h2>${escapeHtml(L2.errors?.noPermission || 'No Permission')}</h2>
+                <p>${escapeHtml(L2.errors?.missingPermission || 'Missing permission:')} ${escapeHtml(permission)}</p>
+                <p><a href="/admin">${escapeHtml(L2.errors?.backToAdmin || 'Back to Admin Area')}</a></p>
                 ${renderSupportFooter()}
             </body>
             </html>
@@ -866,19 +879,20 @@ function formatAdminPermissions(admin) {
 function renderSidebar(req) {
     const logoExists = fs.existsSync(LOGO_FILE);
     const currentAdmin = getCurrentAdmin(req);
+    const L = loadLocale();
 
     const items = [
-        hasPermission(req, 'dashboard.view') ? `<a href="/admin">&#9632; Dashboard</a>` : '',
-        hasPermission(req, 'rooms.view') ? `<a href="/admin/rooms">&#9632; Räume</a>` : '',
-        hasPermission(req, 'terminals.view') ? `<a href="/admin/terminals">&#9632; Terminals</a>` : '',
-        hasPermission(req, 'links.view') ? `<a href="/admin/links">&#9632; Raumlinks</a>` : '',
-        hasPermission(req, 'admins.view') ? `<a href="/admin/admins">&#9632; Admins</a>` : '',
-        hasPermission(req, 'microsoft.view') ? `<a href="/admin/microsoft">&#9632; Microsoft</a>` : '',
-        hasPermission(req, 'system.settings') ? `<a href="/admin/system">&#9632; System</a>` : '',
-        hasPermission(req, 'system.logo') ? `<a href="/admin/logo">&#9632; Logo</a>` : '',
-        hasPermission(req, 'server.ssh')  ? `<a href="/admin/ssh">&#9632; SSH</a>` : '',
-        `<a href="/admin/account">&#9632; Mein Konto</a>`,
-        `<a href="/admin/logout" style="color:#f87171;">&#9632; Logout</a>`
+        hasPermission(req, 'dashboard.view') ? `<a href="/admin" data-i18n="nav.dashboard">&#9632; ${L.nav?.dashboard}</a>` : '',
+        hasPermission(req, 'rooms.view') ? `<a href="/admin/rooms" data-i18n="nav.rooms">&#9632; ${L.nav?.rooms}</a>` : '',
+        hasPermission(req, 'terminals.view') ? `<a href="/admin/terminals" data-i18n="nav.terminals">&#9632; ${L.nav?.terminals}</a>` : '',
+        hasPermission(req, 'links.view') ? `<a href="/admin/links" data-i18n="nav.links">&#9632; ${L.nav?.links}</a>` : '',
+        hasPermission(req, 'admins.view') ? `<a href="/admin/admins" data-i18n="nav.admins">&#9632; ${L.nav?.admins}</a>` : '',
+        hasPermission(req, 'microsoft.view') ? `<a href="/admin/microsoft" data-i18n="nav.microsoft">&#9632; ${L.nav?.microsoft}</a>` : '',
+        hasPermission(req, 'system.settings') ? `<a href="/admin/system" data-i18n="nav.system">&#9632; ${L.nav?.system}</a>` : '',
+        hasPermission(req, 'system.logo') ? `<a href="/admin/logo" data-i18n="nav.logo">&#9632; ${L.nav?.logo}</a>` : '',
+        hasPermission(req, 'server.ssh')  ? `<a href="/admin/ssh" data-i18n="nav.ssh">&#9632; ${L.nav?.ssh}</a>` : '',
+        `<a href="/admin/account" data-i18n="nav.myAccount">&#9632; ${L.nav?.myAccount}</a>`,
+        `<a href="/admin/logout" style="color:#f87171;" data-i18n="nav.logout">&#9632; ${L.nav?.logout}</a>`
     ].filter(Boolean).join('');
 
     return `
@@ -892,21 +906,53 @@ function renderSidebar(req) {
                 ${items}
             </nav>
             <div class="sidebar-footer">
-                <button class="theme-toggle" onclick="toggleTheme()" title="Hell/Dunkel umschalten">&#9790; Modus</button>
-                <button class="theme-toggle" id="devModeBtn" onclick="toggleDevMode()" title="Entwicklermodus" style="margin-top:6px;">&#128736; Dev</button>
+                <button class="theme-toggle" onclick="toggleTheme()" title="Hell/Dunkel umschalten" data-i18n="sidebar.themeToggle">${L.sidebar?.themeToggle}</button>
+                <button class="theme-toggle" id="devModeBtn" onclick="toggleDevMode()" title="Entwicklermodus" style="margin-top:6px;" data-i18n="sidebar.devMode">${L.sidebar?.devMode}</button>
             </div>
         </aside>
     `;
 }
 
+function loadLocale() {
+    const lang = String(appConfig.language || 'de').replace(/[^a-z]/gi, '').toLowerCase();
+    const allowed = ['de', 'en'];
+    const safeLang = allowed.includes(lang) ? lang : 'de';
+    const localePath = path.join(__dirname, 'locales', safeLang + '.json');
+    try {
+        return JSON.parse(fs.readFileSync(localePath, 'utf8'));
+    } catch (e) {
+        console.error('[i18n] Locale laden fehlgeschlagen:', e.message);
+        return {};
+    }
+}
+
 function renderAdminLayout(req, title, content) {
+    const locale = loadLocale();
     return `
     <!DOCTYPE html>
-    <html lang="de">
+    <html lang="${escapeHtml(appConfig.language || 'de')}">
     <head>
         <meta charset="UTF-8">
         <meta name="viewport" content="width=device-width, initial-scale=1.0">
         <title>${escapeHtml(title)} – DeskView Admin</title>
+        <script>window._LOCALE = ${JSON.stringify(locale)};</script>
+        <script>
+        (function(){
+          var L = window._LOCALE || {};
+          function t(k){return k.split('.').reduce(function(o,p){return o&&o[p]},L)||k;}
+          window.t = t;
+          document.addEventListener('DOMContentLoaded',function(){
+            document.querySelectorAll('[data-i18n]').forEach(function(el){
+              var v=t(el.getAttribute('data-i18n'));
+              if(v!==el.getAttribute('data-i18n'))el.textContent=v;
+            });
+            document.querySelectorAll('[data-i18n-placeholder]').forEach(function(el){
+              var v=t(el.getAttribute('data-i18n-placeholder'));
+              if(v!==el.getAttribute('data-i18n-placeholder'))el.placeholder=v;
+            });
+          });
+        })();
+        </script>
         <style>
             * { box-sizing: border-box; }
             :root {
@@ -1912,6 +1958,7 @@ STARTSEITE
 ==================================================
 */
 app.get('/', (req, res) => {
+    const L = loadLocale();
     const logoExists = fs.existsSync(LOGO_FILE);
     const roomList = Object.values(rooms);
 
@@ -1940,7 +1987,7 @@ app.get('/', (req, res) => {
                 <div class="room-seats">
                     ${seatLinks}
                 </div>
-                <a href="/${encodeURIComponent(room.id)}" class="room-card-link">Raum öffnen &#8594;</a>
+                <a href="/${encodeURIComponent(room.id)}" class="room-card-link">${L.home.openRoom}</a>
             </div>
         `;
     }).join('');
@@ -2219,13 +2266,13 @@ app.get('/', (req, res) => {
 
             <main>
                 <div class="hero">
-                    <h1>Sitzplatzverwaltung</h1>
-                    <p>Wähle einen Raum, um einen Sitzplatz einzuchecken.</p>
+                    <h1>${L.home.title}</h1>
+                    <p>${L.home.subtitle}</p>
                 </div>
 
                 ${roomList.length > 0
                     ? `<div class="rooms-grid">${roomCards}</div>`
-                    : `<div class="empty-state"><p>Noch keine Räume vorhanden.</p><a href="/admin" class="btn-admin" style="display:inline-flex;">Admin-Bereich öffnen</a></div>`
+                    : `<div class="empty-state"><p>${L.home.noRooms}</p><a href="/admin" class="btn-admin" style="display:inline-flex;">${L.home.openAdmin}</a></div>`
                 }
             </main>
 
@@ -2475,13 +2522,13 @@ app.get('/admin/setup', (req, res) => {
                     <button class="theme-btn" onclick="toggleTheme()">&#9790; Modus</button>
                 </div>
 
-                <h1>Ersteinrichtung</h1>
-                <p class="subtitle">
+                <h1 data-i18n="setup.title">Ersteinrichtung</h1>
+                <p class="subtitle" data-i18n="setup.subtitle2">
                     Richte einmalig den Master-Admin und das Session Secret ein.<br>
                     <strong>rooms.json</strong>, <strong>admins.json</strong> und <strong>config.json</strong> wurden bereits erstellt.
                 </p>
 
-                <div class="notice">
+                <div class="notice" data-i18n="setup.sessionSecretNotice">
                     <strong>Session Secret:</strong> Schützt deine Login-Sessions durch Signierung der Session-Cookies.
                     Der vorgeschlagene Wert ist sicher – du kannst ihn einfach übernehmen.
                 </div>
@@ -2490,56 +2537,56 @@ app.get('/admin/setup', (req, res) => {
                     ${csrfField(req)}
                     <div class="grid-2">
                         <div class="card">
-                            <h2>Master-Admin</h2>
-                            <label>Benutzername</label>
-                            <input type="text" name="username" placeholder="z. B. admin" required autofocus>
-                            <label>Anzeigename <span class="optional-tag">optional</span></label>
-                            <input type="text" name="displayName" placeholder="z. B. Max Mustermann">
-                            <label>Passwort</label>
-                            <input type="password" name="password" id="setup_pw" placeholder="Mindestens 8 Zeichen" required oninput="checkPw()">
+                            <h2 data-i18n="setup.masterAdmin">Master-Admin</h2>
+                            <label data-i18n="setup.username">Benutzername</label>
+                            <input type="text" name="username" placeholder="z. B. admin" data-i18n-placeholder="setup.usernamePlaceholder" required autofocus>
+                            <label data-i18n="setup.displayName">Anzeigename <span class="optional-tag">optional</span></label>
+                            <input type="text" name="displayName" placeholder="z. B. Max Mustermann" data-i18n-placeholder="admins.displayNamePlaceholder">
+                            <label data-i18n="setup.password">Passwort</label>
+                            <input type="password" name="password" id="setup_pw" placeholder="Mindestens 8 Zeichen" data-i18n-placeholder="setup.passwordPlaceholder" required oninput="checkPw()">
                             <div id="pw_hints" style="margin-top:6px;font-size:12px;line-height:1.8;display:none;">
                                 <div id="ph_len"  style="color:var(--muted);">✗ Mindestens 8 Zeichen</div>
                                 <div id="ph_upper" style="color:var(--muted);">✗ Mindestens ein Großbuchstabe</div>
                                 <div id="ph_num"  style="color:var(--muted);">✗ Mindestens eine Zahl</div>
                             </div>
-                            <label style="margin-top:10px;">Passwort wiederholen</label>
-                            <input type="password" name="confirmPassword" id="setup_pw2" placeholder="Passwort bestätigen" required oninput="checkMatch()">
+                            <label style="margin-top:10px;" data-i18n="setup.passwordRepeat">Passwort wiederholen</label>
+                            <input type="password" name="confirmPassword" id="setup_pw2" placeholder="Passwort bestätigen" data-i18n-placeholder="setup.passwordConfirmPlaceholder" required oninput="checkMatch()">
                             <div id="pw_match_err" style="color:#dc2626;font-size:12px;margin-top:4px;display:none;">✗ Passwörter stimmen nicht überein</div>
                         </div>
 
                         <div class="card">
-                            <h2>Session Secret</h2>
-                            <label>Session Secret</label>
+                            <h2 data-i18n="setup.sessionSecret">Session Secret</h2>
+                            <label data-i18n="setup.sessionSecret">Session Secret</label>
                             <input type="text" name="sessionSecret" value="${escapeHtml(generatedSecret)}" required>
-                            <div class="card-hint" style="font-size:13px; color:var(--muted); line-height:1.5;">
+                            <div class="card-hint" style="font-size:13px; color:var(--muted); line-height:1.5;" data-i18n="setup.secretHint">
                                 Der vorgeschlagene Wert ist bereits kryptographisch stark.
                                 Du kannst ihn übernehmen oder durch einen eigenen ersetzen.
                             </div>
 
-                            <h2 style="margin-top:16px;">Microsoft / Entra <span class="optional-tag">optional</span></h2>
+                            <h2 style="margin-top:16px;" data-i18n="setup.microsoftOptional">Microsoft / Entra <span class="optional-tag">optional</span></h2>
 
                             <div style="display:flex;align-items:center;gap:12px;margin-bottom:14px;">
                                 <label class="toggle-switch">
                                     <input type="checkbox" name="microsoftLoginEnabled" id="ms_toggle_setup" value="1" onchange="document.getElementById('ms_fields_setup').style.display=this.checked?'block':'none'">
                                     <span class="toggle-slider"></span>
                                 </label>
-                                <span style="font-size:14px;font-weight:600;color:var(--text);">Microsoft Login aktivieren</span>
+                                <span style="font-size:14px;font-weight:600;color:var(--text);" data-i18n="setup.enableMicrosoftLogin">Microsoft Login aktivieren</span>
                             </div>
                             <div id="ms_fields_setup" style="display:none;">
-                                <label>Client ID</label>
-                                <input type="text" name="clientID" value="${escapeHtml(microsoftConfig.clientID || '')}" placeholder="Leer lassen falls nicht benötigt">
-                                <label>Tenant ID</label>
+                                <label data-i18n="microsoft.clientId">Client ID</label>
+                                <input type="text" name="clientID" value="${escapeHtml(microsoftConfig.clientID || '')}" placeholder="Leer lassen falls nicht benötigt" data-i18n-placeholder="setup.clientIdPlaceholder">
+                                <label data-i18n="microsoft.tenantId">Tenant ID</label>
                                 <input type="text" name="tenantID" value="${escapeHtml(microsoftConfig.tenantID || '')}">
-                                <label>Client Secret</label>
+                                <label data-i18n="microsoft.clientSecret">Client Secret</label>
                                 <input type="text" name="clientSecret" value="${escapeHtml(microsoftConfig.clientSecret || '')}">
-                                <label>Callback URL</label>
+                                <label data-i18n="microsoft.callbackUrl">Callback URL</label>
                                 <input type="text" name="callbackURL" value="${escapeHtml(microsoftConfig.callbackURL || '')}">
                             </div>
                         </div>
                     </div>
 
                     <div id="form_err" style="color:#dc2626;font-size:13px;font-weight:600;margin-bottom:8px;display:none;"></div>
-                    <button type="submit" class="submit-btn" onclick="return validateSetup()">Ersteinrichtung abschließen &#8594;</button>
+                    <button type="submit" class="submit-btn" onclick="return validateSetup()" data-i18n="setup.setupBtn">Ersteinrichtung abschließen &#8594;</button>
                 </form>
 
                 <div class="support-footer">
@@ -2613,23 +2660,24 @@ app.post('/admin/setup', setupLimiter, requireCsrf, async (req, res) => {
         const clientSecret = String(req.body.clientSecret || '').trim();
         const callbackURL = String(req.body.callbackURL || '').trim();
 
+        const L = loadLocale();
         if (!username || !password || !confirmPassword || !sessionSecret) {
-            return res.status(400).send('Bitte alle Pflichtfelder ausfüllen');
+            return res.status(400).send(L.errors?.fillAllFields);
         }
 
         if (password !== confirmPassword) {
-            return res.status(400).send('Die Passwörter stimmen nicht überein');
+            return res.status(400).send(L.errors?.passwordMismatch);
         }
 
         const pwErr1 = validatePasswordStrength(password);
         if (pwErr1) return res.status(400).send(pwErr1);
 
         if (sessionSecret.length < 32) {
-            return res.status(400).send('Das Session Secret sollte mindestens 32 Zeichen lang sein');
+            return res.status(400).send(L.errors?.sessionSecretTooShort);
         }
 
         if (hasAnyAdmins()) {
-            return res.status(400).send('Es existiert bereits ein Admin');
+            return res.status(400).send(L.errors?.adminAlreadyExists);
         }
 
         const passwordHash = await bcrypt.hash(password, BCRYPT_ROUNDS);
@@ -2799,11 +2847,11 @@ app.post('/admin/setup', setupLimiter, requireCsrf, async (req, res) => {
                 <button class="theme-btn" onclick="(function(){var c=document.documentElement.getAttribute('data-theme');var n=c==='dark'?'light':'dark';document.documentElement.setAttribute('data-theme',n);localStorage.setItem('deskview-theme',n);})()">&#9790; Modus</button>
                 <div class="card">
                     <div class="icon">&#10003;</div>
-                    <h2>Ersteinrichtung abgeschlossen</h2>
-                    <div class="success-box">
+                    <h2 data-i18n="setup.setupDone">Ersteinrichtung abgeschlossen</h2>
+                    <div class="success-box" data-i18n="setup.setupSuccess">
                         Master-Admin und Konfiguration wurden erfolgreich gespeichert.
                     </div>
-                    <a href="/admin/login" class="login-btn">Zum Login &rarr;</a>
+                    <a href="/admin/login" class="login-btn" data-i18n="setup.toLogin">Zum Login &rarr;</a>
                     ${renderSupportFooter()}
                 </div>
             </body>
@@ -2811,7 +2859,8 @@ app.post('/admin/setup', setupLimiter, requireCsrf, async (req, res) => {
         `);
     } catch (err) {
         console.error(err);
-        return res.status(500).send('Ersteinrichtung fehlgeschlagen');
+        const L = loadLocale();
+        return res.status(500).send(L.errors?.setupFailed);
     }
 });
 
@@ -3045,22 +3094,22 @@ app.get('/admin/login', (req, res) => {
                         : `<span class="login-logo-text">Komvera DeskView</span>`
                     }
                 </div>
-                <h2>Admin Login</h2>
+                <h2 data-i18n="login.title">Admin Login</h2>
                 <form method="POST" action="/admin/login">
                     ${csrfField(req)}
-                    <label for="username">Benutzername</label>
-                    <input type="text" id="username" name="username" placeholder="Benutzername" required autofocus class="${loginErrorField === 'username' ? 'input-error' : ''}">
+                    <label for="username" data-i18n="login.username">Benutzername</label>
+                    <input type="text" id="username" name="username" placeholder="Benutzername" data-i18n-placeholder="login.username" required autofocus class="${loginErrorField === 'username' ? 'input-error' : ''}">
                     ${loginErrorField === 'username' ? `<span class="field-error">${escapeHtml(loginError)}</span>` : ''}
-                    <label for="password">Passwort</label>
+                    <label for="password" data-i18n="login.password">Passwort</label>
                     <div class="field-wrap">
-                        <input type="password" id="password" name="password" placeholder="Passwort" required class="${loginErrorField === 'password' ? 'input-error' : ''}">
+                        <input type="password" id="password" name="password" placeholder="Passwort" data-i18n-placeholder="login.password" required class="${loginErrorField === 'password' ? 'input-error' : ''}">
                         <button type="button" class="eye-btn" data-eye="password" onclick="toggleVis('password')">&#128065;</button>
                     </div>
                     ${loginErrorField === 'password' ? `<span class="field-error">${escapeHtml(loginError)}</span>` : ''}
-                    <button type="submit">Anmelden</button>
+                    <button type="submit" data-i18n="login.loginBtn">Anmelden</button>
                 </form>
                 <div class="home-link">
-                    <a href="/">&#8592; Zur Startseite</a>
+                    <a href="/" data-i18n="login.backToHome">&#8592; Zur Startseite</a>
                 </div>
                 ${renderSupportFooter()}
             </div>
@@ -3107,17 +3156,18 @@ app.post('/admin/login', loginLimiter, requireCsrf, async (req, res) => {
         }
 
         req.session.regenerate((err) => {
-            if (err) return res.status(500).send('Login fehlgeschlagen');
+            if (err) { const L = loadLocale(); return res.status(500).send(L.errors?.loginFailed); }
             req.session.adminAuthenticated = true;
             req.session.adminUsername = admin.username;
             req.session.save((saveErr) => {
-                if (saveErr) return res.status(500).send('Login fehlgeschlagen');
+                if (saveErr) { const L = loadLocale(); return res.status(500).send(L.errors?.loginFailed); }
                 return res.redirect('/admin');
             });
         });
     } catch (err) {
         console.error(err);
-        return res.status(500).send('Login fehlgeschlagen');
+        const L = loadLocale();
+        return res.status(500).send(L.errors?.loginFailed);
     }
 });
 
@@ -3133,6 +3183,7 @@ ADMIN DASHBOARD
 ==================================================
 */
 app.get('/admin', requireAdmin, requirePermission('dashboard.view'), (req, res) => {
+    const L = loadLocale();
     const currentAdmin  = getCurrentAdmin(req);
     const roomList      = Object.values(rooms);
     const totalSeats    = roomList.reduce((s, r) => s + r.seats.length, 0);
@@ -3145,28 +3196,28 @@ app.get('/admin', requireAdmin, requirePermission('dashboard.view'), (req, res) 
     // --- Statistiken (volle Breite, Hero) ---
     const statsHtml = `
         <div class="card db-hero">
-            <div class="db-hero-label">📊 Übersicht</div>
+            <div class="db-hero-label" data-i18n="dashboard.overview">${L.dashboard?.overview}</div>
             <div class="db-stat-grid">
                 <div class="db-stat-tile">
                     <div class="db-stat-num">${roomList.length}</div>
-                    <div class="db-stat-sub">Räume</div>
+                    <div class="db-stat-sub" data-i18n="dashboard.rooms">${L.dashboard?.rooms}</div>
                 </div>
                 <div class="db-stat-tile db-stat-tile--red">
                     <div class="db-stat-num" style="color:#dc2626;">${occupiedSeats}</div>
-                    <div class="db-stat-sub">Belegt</div>
+                    <div class="db-stat-sub" data-i18n="dashboard.occupied">${L.dashboard?.occupied}</div>
                 </div>
                 <div class="db-stat-tile db-stat-tile--green">
                     <div class="db-stat-num" style="color:#059669;">${freeSeats}</div>
-                    <div class="db-stat-sub">Frei</div>
+                    <div class="db-stat-sub" data-i18n="dashboard.free">${L.dashboard?.free}</div>
                 </div>
                 <div class="db-stat-tile">
                     <div class="db-stat-num">${terminalList.length}</div>
-                    <div class="db-stat-sub">Terminals</div>
+                    <div class="db-stat-sub" data-i18n="nav.terminals">${L.nav?.terminals}</div>
                 </div>
             </div>
             <div style="margin-top:20px;">
                 <div style="display:flex;justify-content:space-between;font-size:13px;opacity:.6;margin-bottom:6px;">
-                    <span>Auslastung</span><span>${auslastungPct}%</span>
+                    <span data-i18n="dashboard.utilization">${L.dashboard?.utilization}</span><span>${auslastungPct}%</span>
                 </div>
                 <div style="background:var(--border);border-radius:999px;height:8px;overflow:hidden;">
                     <div style="height:100%;width:${auslastungPct}%;background:${auslastungPct > 80 ? '#dc2626' : auslastungPct > 50 ? '#f59e0b' : '#059669'};border-radius:999px;transition:width .4s;"></div>
@@ -3177,8 +3228,8 @@ app.get('/admin', requireAdmin, requirePermission('dashboard.view'), (req, res) 
     // --- Raumauslastung ---
     const roomOccHtml = hasPermission(req, 'rooms.view') ? `
         <div class="card">
-            <div class="db-card-title">🏢 Raumauslastung</div>
-            ${roomList.length === 0 ? '<p class="db-empty">Keine Räume.</p>' :
+            <div class="db-card-title" data-i18n="dashboard.roomUtilization">${L.dashboard?.roomUtilization}</div>
+            ${roomList.length === 0 ? `<p class="db-empty" data-i18n="rooms.noRooms">${L.rooms?.noRooms}</p>` :
                 roomList.map(r => {
                     const tot = r.seats.length, occ = r.seats.filter(s => s.name && s.name !== 'Frei').length;
                     const pct = tot ? Math.round(occ / tot * 100) : 0;
@@ -3198,9 +3249,9 @@ app.get('/admin', requireAdmin, requirePermission('dashboard.view'), (req, res) 
     // --- Terminals ---
     const terminalsHtml = hasPermission(req, 'terminals.view') ? `
         <div class="card">
-            <div class="db-card-title">🖥️ Terminals</div>
+            <div class="db-card-title" data-i18n="nav.terminals">🖥️ ${L.nav?.terminals}</div>
             ${terminalList.length === 0
-                ? '<p class="db-empty">Keine Terminals. <a href="/admin/terminals" style="color:var(--primary);">Anlegen →</a></p>'
+                ? `<p class="db-empty" data-i18n="terminals.noTerminals">${L.terminals?.noTerminals} <a href="/admin/terminals" style="color:var(--primary);">Anlegen →</a></p>`
                 : terminalList.map(t => {
                     const asgn = roomList.find(r => r.terminalId === t.id);
                     const mc   = t.trmnlMode === 'webhook' ? '#059669' : t.trmnlMode === 'polling' ? '#2563eb' : '#6b7280';
@@ -3209,7 +3260,7 @@ app.get('/admin', requireAdmin, requirePermission('dashboard.view'), (req, res) 
                         <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;">
                             <div style="min-width:0;">
                                 <div style="font-weight:600;font-size:15px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${escapeHtml(t.name)}</div>
-                                <div style="font-size:12px;opacity:.45;margin-top:2px;">${asgn ? escapeHtml(asgn.abteilung) : 'nicht zugewiesen'}</div>
+                                <div style="font-size:12px;opacity:.45;margin-top:2px;">${asgn ? escapeHtml(asgn.abteilung) : `<span data-i18n="dashboard.notAssigned">${L.dashboard?.notAssigned}</span>`}</div>
                             </div>
                             <span style="flex-shrink:0;font-size:11px;padding:3px 9px;border-radius:999px;background:${mc}22;color:${mc};font-weight:700;letter-spacing:.02em;">${escapeHtml(t.trmnlMode || 'none')}</span>
                         </div>
@@ -3220,21 +3271,21 @@ app.get('/admin', requireAdmin, requirePermission('dashboard.view'), (req, res) 
 
     // --- Schnellaktionen ---
     const quickLinks = [
-        hasPermission(req, 'rooms.create')    ? `<a href="/admin/rooms"     class="db-btn">＋ Raum</a>`     : '',
-        hasPermission(req, 'terminals.create')? `<a href="/admin/terminals" class="db-btn">＋ Terminal</a>` : '',
-        hasPermission(req, 'admins.create')   ? `<a href="/admin/admins"    class="db-btn">＋ Admin</a>`    : '',
-        hasPermission(req, 'links.view')      ? `<a href="/admin/links"     class="db-btn">🔗 Raumlinks</a>` : '',
+        hasPermission(req, 'rooms.create')    ? `<a href="/admin/rooms"     class="db-btn" data-i18n="dashboard.addRoom">${L.dashboard?.addRoom}</a>`     : '',
+        hasPermission(req, 'terminals.create')? `<a href="/admin/terminals" class="db-btn" data-i18n="dashboard.addTerminal">${L.dashboard?.addTerminal}</a>` : '',
+        hasPermission(req, 'admins.create')   ? `<a href="/admin/admins"    class="db-btn" data-i18n="dashboard.addAdmin">${L.dashboard?.addAdmin}</a>`    : '',
+        hasPermission(req, 'links.view')      ? `<a href="/admin/links"     class="db-btn" data-i18n="nav.links">🔗 ${L.nav?.links}</a>` : '',
     ].filter(Boolean);
     const quickActionsHtml = quickLinks.length ? `
         <div class="card">
-            <div class="db-card-title">⚡ Schnellaktionen</div>
+            <div class="db-card-title" data-i18n="dashboard.quickActions">${L.dashboard?.quickActions}</div>
             <div style="display:flex;flex-wrap:wrap;gap:10px;">${quickLinks.join('')}</div>
         </div>` : '';
 
     // --- Meine Rechte ---
     const myPermsHtml = `
         <div class="card">
-            <div class="db-card-title">👤 Meine Rechte</div>
+            <div class="db-card-title" data-i18n="dashboard.myPermissions">${L.dashboard?.myPermissions}</div>
             ${formatAdminPermissions(currentAdmin)}
         </div>`;
 
@@ -3243,13 +3294,13 @@ app.get('/admin', requireAdmin, requirePermission('dashboard.view'), (req, res) 
         const cfg = microsoftConfig, en = appConfig.microsoftLoginEnabled;
         const ok  = !!(cfg.clientID && cfg.tenantID && cfg.clientSecret && cfg.callbackURL);
         return `<div class="card">
-            <div class="db-card-title">🔷 Microsoft / Entra ID</div>
+            <div class="db-card-title" data-i18n="microsoft.title">🔷 ${L.microsoft?.title}</div>
             <div style="display:flex;flex-direction:column;gap:8px;">
                 <div class="db-info-row">
-                    <span>Login aktiviert</span><span style="font-weight:700;color:${en ? '#059669' : '#6b7280'};">${en ? '✅ Ja' : '❌ Nein'}</span>
+                    <span data-i18n="microsoft.loginEnabled">${L.microsoft?.loginEnabled}</span><span style="font-weight:700;color:${en ? '#059669' : '#6b7280'};">${en ? `✅ <span data-i18n="common.yes">${L.common?.yes}</span>` : `❌ <span data-i18n="common.no">${L.common?.no}</span>`}</span>
                 </div>
                 <div class="db-info-row">
-                    <span>Konfiguriert</span><span style="font-weight:700;color:${ok ? '#059669' : '#f59e0b'};">${ok ? '✅ Vollständig' : '⚠️ Unvollständig'}</span>
+                    <span data-i18n="dashboard.configured">${L.dashboard?.configured}</span><span style="font-weight:700;color:${ok ? '#059669' : '#f59e0b'};">${ok ? `✅ <span data-i18n="dashboard.complete">${L.dashboard?.complete}</span>` : `⚠️ <span data-i18n="dashboard.incomplete">${L.dashboard?.incomplete}</span>`}</span>
                 </div>
             </div>
         </div>`;
@@ -3258,12 +3309,12 @@ app.get('/admin', requireAdmin, requirePermission('dashboard.view'), (req, res) 
     // --- Admins ---
     const adminsHtml = hasPermission(req, 'admins.view') ? `
         <div class="card">
-            <div class="db-card-title">👥 Admins</div>
+            <div class="db-card-title" data-i18n="admins.title">👥 ${L.admins?.title}</div>
             <div style="display:flex;flex-direction:column;gap:8px;">
                 ${admins.map(a => `
                 <div class="db-info-row">
                     <span style="font-weight:500;">${escapeHtml(a.displayName || a.username)}${a.master ? ' <span class="badge badge-master" style="font-size:10px;vertical-align:middle;">MASTER</span>' : ''}</span>
-                    <span style="opacity:.4;font-size:13px;">${a.microsoft ? 'Microsoft' : 'Lokal'}</span>
+                    <span style="opacity:.4;font-size:13px;">${a.microsoft ? `<span data-i18n="dashboard.microsoft">${L.dashboard?.microsoft}</span>` : `<span data-i18n="dashboard.local">${L.dashboard?.local}</span>`}</span>
                 </div>`).join('')}
             </div>
         </div>` : '';
@@ -3272,18 +3323,18 @@ app.get('/admin', requireAdmin, requirePermission('dashboard.view'), (req, res) 
     const serverHtml = hasPermission(req, 'server.view') ? `
         <div class="card db-hero" style="grid-column:1/-1;">
             <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:20px;flex-wrap:wrap;gap:10px;">
-                <div class="db-card-title" style="margin:0;">⚙️ DeskView Server</div>
+                <div class="db-card-title" data-i18n="dashboard.deskviewServer" style="margin:0;">⚙️ DeskView Server</div>
                 <div style="display:flex;gap:8px;flex-wrap:wrap;" data-csrf="${getCsrfToken(req)}">
-                    <button onclick="srvFetchStatus()" style="padding:6px 14px;border:1.5px solid var(--border);border-radius:8px;background:transparent;color:var(--text);font-size:12px;font-weight:600;cursor:pointer;">📋 systemctl status</button>
-                    ${hasPermission(req, 'server.restart') ? `<button onclick="srvConfirmRestart('deskview')" style="padding:6px 14px;border:1.5px solid #f59e0b;border-radius:8px;background:transparent;color:#f59e0b;font-size:12px;font-weight:600;cursor:pointer;">↺ DeskView neu starten</button>` : ''}
-                    ${hasPermission(req, 'server.reboot') ? `<button onclick="srvConfirmRestart('linux')" style="padding:6px 14px;border:1.5px solid #dc2626;border-radius:8px;background:transparent;color:#dc2626;font-size:12px;font-weight:600;cursor:pointer;">⏻ Linux neu starten</button>` : ''}
+                    <button onclick="srvFetchStatus()" style="padding:6px 14px;border:1.5px solid var(--border);border-radius:8px;background:transparent;color:var(--text);font-size:12px;font-weight:600;cursor:pointer;" data-i18n="dashboard.systemctlStatus">📋 systemctl status</button>
+                    ${hasPermission(req, 'server.restart') ? `<button onclick="srvConfirmRestart('deskview')" style="padding:6px 14px;border:1.5px solid #f59e0b;border-radius:8px;background:transparent;color:#f59e0b;font-size:12px;font-weight:600;cursor:pointer;" data-i18n="dashboard.restartDeskview">↺ DeskView neu starten</button>` : ''}
+                    ${hasPermission(req, 'server.reboot') ? `<button onclick="srvConfirmRestart('linux')" style="padding:6px 14px;border:1.5px solid #dc2626;border-radius:8px;background:transparent;color:#dc2626;font-size:12px;font-weight:600;cursor:pointer;" data-i18n="dashboard.restartLinux">⏻ Linux neu starten</button>` : ''}
                 </div>
             </div>
             <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:16px;">
                 <div>
-                    <div style="font-size:12px;font-weight:600;opacity:.45;text-transform:uppercase;letter-spacing:.06em;margin-bottom:10px;">CPU &amp; RAM</div>
+                    <div style="font-size:12px;font-weight:600;opacity:.45;text-transform:uppercase;letter-spacing:.06em;margin-bottom:10px;" data-i18n="dashboard.cpuRam">CPU &amp; RAM</div>
                     <div style="display:flex;flex-direction:column;gap:7px;">
-                        <div class="db-info-row"><span>CPU (<span id="srv-cpu-cores">–</span> Kerne)</span>
+                        <div class="db-info-row"><span data-i18n="dashboard.cpuCores">CPU (<span id="srv-cpu-cores">–</span> Kerne)</span>
                             <span style="display:flex;align-items:center;gap:8px;">
                                 <span style="width:70px;height:6px;background:var(--border);border-radius:999px;overflow:hidden;display:inline-block;">
                                     <span id="srv-cpu-bar" style="display:block;height:100%;width:0%;background:#2563eb;border-radius:999px;transition:width .5s;"></span>
@@ -3291,8 +3342,8 @@ app.get('/admin', requireAdmin, requirePermission('dashboard.view'), (req, res) 
                                 <span id="srv-cpu" style="font-weight:700;min-width:36px;text-align:right;">–</span>
                             </span>
                         </div>
-                        <div class="db-info-row"><span>Load avg</span><span id="srv-load" style="font-weight:600;font-size:12px;opacity:.8;">–</span></div>
-                        <div class="db-info-row"><span>RAM</span>
+                        <div class="db-info-row"><span data-i18n="dashboard.loadAvg">Load avg</span><span id="srv-load" style="font-weight:600;font-size:12px;opacity:.8;">–</span></div>
+                        <div class="db-info-row"><span data-i18n="dashboard.ram">RAM</span>
                             <span style="display:flex;align-items:center;gap:8px;">
                                 <span style="width:70px;height:6px;background:var(--border);border-radius:999px;overflow:hidden;display:inline-block;">
                                     <span id="srv-ram-bar" style="display:block;height:100%;width:0%;background:#059669;border-radius:999px;transition:width .5s;"></span>
@@ -3300,30 +3351,30 @@ app.get('/admin', requireAdmin, requirePermission('dashboard.view'), (req, res) 
                                 <span id="srv-ram" style="font-weight:700;min-width:36px;text-align:right;">–</span>
                             </span>
                         </div>
-                        <div class="db-info-row"><span>RAM gesamt</span><span id="srv-ram-detail" style="font-weight:600;opacity:.7;">–</span></div>
+                        <div class="db-info-row"><span data-i18n="dashboard.ramTotal">RAM gesamt</span><span id="srv-ram-detail" style="font-weight:600;opacity:.7;">–</span></div>
                     </div>
                 </div>
                 <div>
-                    <div style="font-size:12px;font-weight:600;opacity:.45;text-transform:uppercase;letter-spacing:.06em;margin-bottom:10px;">System</div>
+                    <div style="font-size:12px;font-weight:600;opacity:.45;text-transform:uppercase;letter-spacing:.06em;margin-bottom:10px;" data-i18n="dashboard.systemSection">System</div>
                     <div style="display:flex;flex-direction:column;gap:7px;">
-                        <div class="db-info-row"><span>Hostname</span><span id="srv-host" style="font-weight:600;font-size:12px;">–</span></div>
-                        <div class="db-info-row"><span>IP-Adresse(n)</span><span id="srv-ip" style="font-weight:600;font-size:12px;">–</span></div>
-                        <div class="db-info-row"><span>Plattform</span><span id="srv-platform" style="font-weight:600;font-size:12px;opacity:.7;">–</span></div>
-                        <div class="db-info-row"><span>System-Uptime</span><span id="srv-sys-uptime" style="font-weight:600;">–</span></div>
+                        <div class="db-info-row"><span data-i18n="dashboard.hostname">Hostname</span><span id="srv-host" style="font-weight:600;font-size:12px;">–</span></div>
+                        <div class="db-info-row"><span data-i18n="dashboard.ipAddresses">IP-Adresse(n)</span><span id="srv-ip" style="font-weight:600;font-size:12px;">–</span></div>
+                        <div class="db-info-row"><span data-i18n="dashboard.platform">Plattform</span><span id="srv-platform" style="font-weight:600;font-size:12px;opacity:.7;">–</span></div>
+                        <div class="db-info-row"><span data-i18n="dashboard.systemUptime">System-Uptime</span><span id="srv-sys-uptime" style="font-weight:600;">–</span></div>
                     </div>
                 </div>
                 <div>
-                    <div style="font-size:12px;font-weight:600;opacity:.45;text-transform:uppercase;letter-spacing:.06em;margin-bottom:10px;">DeskView Prozess</div>
+                    <div style="font-size:12px;font-weight:600;opacity:.45;text-transform:uppercase;letter-spacing:.06em;margin-bottom:10px;" data-i18n="dashboard.processSection">DeskView Prozess</div>
                     <div style="display:flex;flex-direction:column;gap:7px;">
-                        <div class="db-info-row"><span>Laufzeit</span><span id="srv-uptime" style="font-weight:600;">–</span></div>
-                        <div class="db-info-row"><span>Node.js</span><span id="srv-node" style="font-weight:600;opacity:.7;font-size:12px;">–</span></div>
-                        <div class="db-info-row"><span>Heap</span><span id="srv-heap" style="font-weight:600;">–</span></div>
-                        <div class="db-info-row"><span>RSS</span><span id="srv-rss" style="font-weight:600;">–</span></div>
+                        <div class="db-info-row"><span data-i18n="dashboard.uptime">Laufzeit</span><span id="srv-uptime" style="font-weight:600;">–</span></div>
+                        <div class="db-info-row"><span data-i18n="dashboard.node">Node.js</span><span id="srv-node" style="font-weight:600;opacity:.7;font-size:12px;">–</span></div>
+                        <div class="db-info-row"><span data-i18n="dashboard.heap">Heap</span><span id="srv-heap" style="font-weight:600;">–</span></div>
+                        <div class="db-info-row"><span data-i18n="dashboard.rss">RSS</span><span id="srv-rss" style="font-weight:600;">–</span></div>
                     </div>
                 </div>
                 <div style="grid-column:1/-1;">
                     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
-                        <div style="font-size:12px;font-weight:600;opacity:.45;text-transform:uppercase;letter-spacing:.06em;">Server-Log</div>
+                        <div style="font-size:12px;font-weight:600;opacity:.45;text-transform:uppercase;letter-spacing:.06em;" data-i18n="dashboard.serverLog">Server-Log</div>
                         <span id="srv-log-age" style="font-size:11px;opacity:.3;"></span>
                     </div>
                     <div id="srv-log" style="background:var(--bg);border:1px solid var(--border);border-radius:10px;padding:10px 14px;height:200px;overflow-y:auto;font-family:monospace;font-size:12px;line-height:1.6;white-space:pre-wrap;word-break:break-all;"></div>
@@ -3364,8 +3415,8 @@ app.get('/admin', requireAdmin, requirePermission('dashboard.view'), (req, res) 
         </style>
         <div class="topbar">
             <div>
-                <h1 class="page-title">Dashboard</h1>
-                <div class="muted">Angemeldet als ${escapeHtml(currentAdmin?.displayName || currentAdmin?.username || 'Admin')} ${currentAdmin?.master ? '<span class="badge badge-master">MASTER</span>' : ''}</div>
+                <h1 class="page-title" data-i18n="dashboard.title">Dashboard</h1>
+                <div class="muted"><span data-i18n="dashboard.loggedInAs">Angemeldet als</span> ${escapeHtml(currentAdmin?.displayName || currentAdmin?.username || 'Admin')} ${currentAdmin?.master ? '<span class="badge badge-master">MASTER</span>' : ''}</div>
             </div>
         </div>
         <div class="db-grid">
@@ -3405,7 +3456,7 @@ app.get('/admin', requireAdmin, requirePermission('dashboard.view'), (req, res) 
         <script src="/admin/srv.js"></script>
     `;
 
-    res.send(renderAdminLayout(req, 'Dashboard', content));
+    res.send(renderAdminLayout(req, L.dashboard.title, content));
 });
 
 
@@ -3421,45 +3472,45 @@ app.get('/admin/account', requireAdmin, (req, res) => {
 
     const content = `
         <div class="topbar">
-            <h1 class="page-title">Mein Konto</h1>
+            <h1 class="page-title" data-i18n="account.title">Mein Konto</h1>
         </div>
 
         <div class="grid-2">
             <div class="card">
-                <h2>Kontodaten</h2>
-                <p><strong>Benutzername:</strong><br>${escapeHtml(admin.username)}</p>
-                <p><strong>Typ:</strong><br>${admin.master ? 'Master-Admin' : 'Admin'}</p>
+                <h2 data-i18n="account.accountData">Kontodaten</h2>
+                <p><strong data-i18n="admins.username">Benutzername:</strong><br>${escapeHtml(admin.username)}</p>
+                <p><strong data-i18n="account.type">Typ:</strong><br>${admin.master ? '<span data-i18n="account.masterAdmin">Master-Admin</span>' : '<span data-i18n="account.admin">Admin</span>'}</p>
             </div>
 
             <div class="card">
-                <h2>Eigenes Passwort ändern</h2>
+                <h2 data-i18n="account.changePassword">Eigenes Passwort ändern</h2>
                 <form method="POST" action="/admin/account/password">
                     ${csrfField(req)}
-                    <label>Aktuelles Passwort</label>
+                    <label data-i18n="account.currentPassword">Aktuelles Passwort</label>
                     <div class="field-wrap">
                         <input type="password" id="acc_cur" name="currentPassword" required class="${accField === 'currentPassword' ? 'input-error' : ''}">
                         <button type="button" class="eye-btn" data-eye="acc_cur" onclick="toggleVis('acc_cur')">&#128065;</button>
                     </div>
                     ${accField === 'currentPassword' ? `<span class="field-error">${escapeHtml(accError)}</span>` : ''}
-                    <label>Neues Passwort</label>
+                    <label data-i18n="account.newPassword">Neues Passwort</label>
                     <div class="field-wrap">
                         <input type="password" id="acc_new" name="newPassword" required class="${accField === 'newPassword' ? 'input-error' : ''}">
                         <button type="button" class="eye-btn" data-eye="acc_new" onclick="toggleVis('acc_new')">&#128065;</button>
                     </div>
                     ${accField === 'newPassword' ? `<span class="field-error">${escapeHtml(accError)}</span>` : ''}
-                    <label>Neues Passwort wiederholen</label>
+                    <label data-i18n="account.newPasswordRepeat">Neues Passwort wiederholen</label>
                     <div class="field-wrap">
                         <input type="password" id="acc_con" name="confirmPassword" required class="${accField === 'confirmPassword' ? 'input-error' : ''}">
                         <button type="button" class="eye-btn" data-eye="acc_con" onclick="toggleVis('acc_con')">&#128065;</button>
                     </div>
                     ${accField === 'confirmPassword' ? `<span class="field-error">${escapeHtml(accError)}</span>` : ''}
-                    <button type="submit">Passwort ändern</button>
+                    <button type="submit" data-i18n="account.savePassword">Passwort ändern</button>
                 </form>
             </div>
         </div>
     `;
 
-    res.send(renderAdminLayout(req, 'Mein Konto', content));
+    res.send(renderAdminLayout(req, L.account.title, content));
 });
 
 app.post('/admin/account/password', requireAdmin, requireCsrf, async (req, res) => {
@@ -3490,18 +3541,19 @@ app.post('/admin/account/password', requireAdmin, requireCsrf, async (req, res) 
         admin.passwordHash = await bcrypt.hash(newPassword, BCRYPT_ROUNDS);
         saveAdmins();
 
-        return res.send(renderAdminLayout(req, 'Passwort geändert', `
+        return res.send(renderAdminLayout(req, L.account.title, `
             <div class="topbar">
-                <h1 class="page-title">Mein Konto</h1>
+                <h1 class="page-title" data-i18n="account.title">Mein Konto</h1>
             </div>
             <div class="card">
-                <div class="notice">Dein Passwort wurde erfolgreich geändert.</div>
-                <p><a class="small-link" href="/admin/account">Zurück zu Mein Konto</a></p>
+                <div class="notice" data-i18n="account.passwordChanged">Dein Passwort wurde erfolgreich geändert.</div>
+                <p><a class="small-link" href="/admin/account" data-i18n="account.backToAccount">Zurück zu Mein Konto</a></p>
             </div>
         `));
     } catch (err) {
         console.error(err);
-        return res.status(500).send('Passwort konnte nicht geändert werden');
+        const L = loadLocale();
+        return res.status(500).send(L.errors?.passwordChangeFailed);
     }
 });
 
@@ -3513,35 +3565,48 @@ SYSTEM
 app.get('/admin/system', requireAdmin, requirePermission('system.settings'), (req, res) => {
     const content = `
         <div class="topbar">
-            <h1 class="page-title">System</h1>
+            <h1 class="page-title" data-i18n="system.title">System</h1>
         </div>
 
         <div class="card">
-            <h2>Session Secret</h2>
-            <div class="notice notice-warn">
+            <h2 data-i18n="system.language">Sprache</h2>
+            <form method="POST" action="/admin/system/language">
+                ${csrfField(req)}
+                <label for="sys_language" data-i18n="system.language">Sprache</label>
+                <select id="sys_language" name="language" style="width:auto;min-width:200px;">
+                    <option value="de" ${(appConfig.language || 'de') === 'de' ? 'selected' : ''}>Deutsch</option>
+                    <option value="en" ${(appConfig.language || 'de') === 'en' ? 'selected' : ''}>English</option>
+                </select>
+                <button type="submit" data-i18n="system.languageSave">Sprache speichern</button>
+            </form>
+        </div>
+
+        <div class="card">
+            <h2 data-i18n="system.sessionSecret">Session Secret</h2>
+            <div class="notice notice-warn" data-i18n="system.sessionSecretWarning">
                 Das Session Secret schützt die Login-Sessions.
                 Nach einer Änderung solltest du den Server neu starten.
             </div>
 
             <form method="POST" action="/admin/system/session-secret">
                 ${csrfField(req)}
-                <label>Neues Session Secret</label>
+                <label data-i18n="system.sessionSecretNew">Neues Session Secret</label>
                 <div class="field-wrap">
-                    <input type="password" id="sys_secret" name="sessionSecret" placeholder="Leer lassen um bestehendes Secret zu behalten" autocomplete="off">
+                    <input type="password" id="sys_secret" name="sessionSecret" placeholder="Leer lassen um bestehendes Secret zu behalten" data-i18n-placeholder="system.sessionSecretPlaceholder" autocomplete="off">
                     <button type="button" class="eye-btn" data-eye="sys_secret" onclick="toggleVis('sys_secret')">&#128065;</button>
                 </div>
-                <button type="submit">Session Secret speichern</button>
+                <button type="submit" data-i18n="system.sessionSecretSave">Session Secret speichern</button>
             </form>
         </div>
 
         <div class="card">
-            <h2>Vorschlag für ein starkes Secret</h2>
+            <h2 data-i18n="system.secretSuggestion">Vorschlag für ein starkes Secret</h2>
             <div class="code-box">${escapeHtml(generateStrongSecret())}</div>
         </div>
 
         <div class="card">
-            <h2>Automatisches Leeren der Sitzplätze</h2>
-            <p style="font-size:14px;color:var(--muted);margin-bottom:16px;line-height:1.5;">
+            <h2 data-i18n="system.seatClear">Automatisches Leeren der Sitzplätze</h2>
+            <p style="font-size:14px;color:var(--muted);margin-bottom:16px;line-height:1.5;" data-i18n="system.seatClearDesc">
                 Belegte Sitzplätze werden nach der gewählten Zeit automatisch freigegeben.
                 Der Zeitpunkt wird beim Einchecken gespeichert.
             </p>
@@ -3557,20 +3622,21 @@ app.get('/admin/system', requireAdmin, requirePermission('system.settings'), (re
                         </label>
                     `).join('')}
                 </div>
-                <button type="submit">Einstellung speichern</button>
+                <button type="submit" data-i18n="system.seatClearSave">Einstellung speichern</button>
             </form>
         </div>
     `;
 
-    res.send(renderAdminLayout(req, 'System', content));
+    res.send(renderAdminLayout(req, L.system.title, content));
 });
 
 app.post('/admin/system/session-secret', requireAdmin, requirePermission('system.settings'), requireCsrf, (req, res) => {
     try {
         const newSecret = String(req.body.sessionSecret || '').trim();
+        const L = loadLocale();
 
         if (newSecret && newSecret.length < 32) {
-            return res.status(400).send('Das Session Secret sollte mindestens 32 Zeichen lang sein');
+            return res.status(400).send(L.errors?.sessionSecretTooShort);
         }
 
         if (newSecret) {
@@ -3578,19 +3644,20 @@ app.post('/admin/system/session-secret', requireAdmin, requirePermission('system
         }
         saveAppConfig();
 
-        return res.send(renderAdminLayout(req, 'System', `
+        return res.send(renderAdminLayout(req, L.system.title, `
             <div class="topbar">
-                <h1 class="page-title">System</h1>
+                <h1 class="page-title" data-i18n="system.title">System</h1>
             </div>
             <div class="card">
-                <div class="notice">Session Secret gespeichert.</div>
-                <p>Bitte den Server neu starten, damit nur noch das neue Secret aktiv ist.</p>
-                <p><a class="small-link" href="/admin/system">Zurück zu System</a></p>
+                <div class="notice" data-i18n="system.sessionSecretSaved">Session Secret gespeichert.</div>
+                <p data-i18n="system.sessionSecretRestart">Bitte den Server neu starten, damit nur noch das neue Secret aktiv ist.</p>
+                <p><a class="small-link" href="/admin/system" data-i18n="system.backToSystem">Zurück zu System</a></p>
             </div>
         `));
     } catch (err) {
         console.error(err);
-        return res.status(500).send('Session Secret konnte nicht gespeichert werden');
+        const L = loadLocale();
+        return res.status(500).send(L.errors?.sessionSecretSaveFailed);
     }
 });
 
@@ -3598,9 +3665,10 @@ app.post('/admin/system/seat-clear-interval', requireAdmin, requirePermission('s
     try {
         const value = String(req.body.seatClearInterval || 'never');
         const valid = SEAT_CLEAR_OPTIONS.map(o => o.value);
+        const L = loadLocale();
 
         if (!valid.includes(value)) {
-            return res.status(400).send('Ungültiger Wert');
+            return res.status(400).send(L.errors?.invalidValue);
         }
 
         appConfig.seatClearInterval = value;
@@ -3609,7 +3677,29 @@ app.post('/admin/system/seat-clear-interval', requireAdmin, requirePermission('s
         return res.redirect('/admin/system');
     } catch (err) {
         console.error(err);
-        return res.status(500).send('Einstellung konnte nicht gespeichert werden');
+        const L = loadLocale();
+        return res.status(500).send(L.errors?.settingSaveFailed);
+    }
+});
+
+app.post('/admin/system/language', requireAdmin, requirePermission('system.settings'), requireCsrf, (req, res) => {
+    try {
+        const value = String(req.body.language || 'de');
+        const allowed = ['de', 'en'];
+        const L = loadLocale();
+
+        if (!allowed.includes(value)) {
+            return res.status(400).send(L.errors?.invalidLanguage);
+        }
+
+        appConfig.language = value;
+        saveAppConfig();
+
+        return res.redirect('/admin/system');
+    } catch (err) {
+        console.error(err);
+        const L = loadLocale();
+        return res.status(500).send(L.errors?.languageSaveFailed);
     }
 });
 
@@ -3623,11 +3713,11 @@ app.get('/admin/logo', requireAdmin, requirePermission('system.logo'), (req, res
 
     const content = `
         <div class="topbar">
-            <h1 class="page-title">Logo verwalten</h1>
+            <h1 class="page-title" data-i18n="logo.title">Logo verwalten</h1>
         </div>
 
         <div class="card">
-            <h2>Aktuelles Logo</h2>
+            <h2 data-i18n="logo.current">Aktuelles Logo</h2>
             ${
                 logoExists
                     ? `
@@ -3635,22 +3725,22 @@ app.get('/admin/logo', requireAdmin, requirePermission('system.logo'), (req, res
                         <img src="/logo.png?v=${Date.now()}" alt="Aktuelles Logo" style="max-width:320px; width:100%; height:auto; object-fit:contain; border:1px solid #e5e7eb; border-radius:12px; padding:12px; background:#fff;">
                     </div>
                     `
-                    : `<p class="muted">Aktuell ist kein Logo vorhanden.</p>`
+                    : `<p class="muted" data-i18n="logo.noLogo">Aktuell ist kein Logo vorhanden.</p>`
             }
 
-            <div class="notice">
+            <div class="notice" data-i18n="logo.info">
                 Das hochgeladene Bild wird automatisch als <strong>logo.png</strong> gespeichert und das alte Logo ersetzt.
             </div>
 
             <form method="POST" action="/admin/logo/upload?_csrf=${getCsrfToken(req)}" enctype="multipart/form-data">
-                <label>Neues Logo hochladen</label>
+                <label data-i18n="logo.upload">Neues Logo hochladen</label>
                 <input type="file" name="logo" accept=".png,.jpg,.jpeg,.webp,image/png,image/jpeg,image/webp" required>
-                <button type="submit">Logo hochladen</button>
+                <button type="submit" data-i18n="logo.uploadBtn">Logo hochladen</button>
             </form>
         </div>
     `;
 
-    res.send(renderAdminLayout(req, 'Logo verwalten', content));
+    res.send(renderAdminLayout(req, L.logo.title, content));
 });
 
 app.post(
@@ -3661,13 +3751,13 @@ app.post(
     (req, res, next) => {
         upload.single('logo')(req, res, function (err) {
             if (err) {
-                return res.status(400).send(renderAdminLayout(req, 'Logo verwalten', `
+                return res.status(400).send(renderAdminLayout(req, L.logo.title, `
                     <div class="topbar">
-                        <h1 class="page-title">Logo verwalten</h1>
+                        <h1 class="page-title" data-i18n="logo.title">Logo verwalten</h1>
                     </div>
                     <div class="card">
                         <div class="notice notice-warn">${escapeHtml(err.message || 'Upload fehlgeschlagen.')}</div>
-                        <p><a class="small-link" href="/admin/logo">Zurück zur Logo-Verwaltung</a></p>
+                        <p><a class="small-link" href="/admin/logo" data-i18n="logo.backToLogo">Zurück zur Logo-Verwaltung</a></p>
                     </div>
                 `));
             }
@@ -3677,40 +3767,40 @@ app.post(
     async (req, res) => {
         try {
             if (!req.file) {
-                return res.status(400).send(renderAdminLayout(req, 'Logo verwalten', `
+                return res.status(400).send(renderAdminLayout(req, L.logo.title, `
                     <div class="topbar">
-                        <h1 class="page-title">Logo verwalten</h1>
+                        <h1 class="page-title" data-i18n="logo.title">Logo verwalten</h1>
                     </div>
                     <div class="card">
-                        <div class="notice notice-warn">Bitte eine Bilddatei auswählen.</div>
-                        <p><a class="small-link" href="/admin/logo">Zurück zur Logo-Verwaltung</a></p>
+                        <div class="notice notice-warn" data-i18n="logo.selectFile">Bitte eine Bilddatei auswählen.</div>
+                        <p><a class="small-link" href="/admin/logo" data-i18n="logo.backToLogo">Zurück zur Logo-Verwaltung</a></p>
                     </div>
                 `));
             }
 
             await saveLogoFromBuffer(req.file.buffer);
 
-            return res.send(renderAdminLayout(req, 'Logo verwalten', `
+            return res.send(renderAdminLayout(req, L.logo.title, `
                 <div class="topbar">
-                    <h1 class="page-title">Logo verwalten</h1>
+                    <h1 class="page-title" data-i18n="logo.title">Logo verwalten</h1>
                 </div>
                 <div class="card">
-                    <div class="notice">Logo erfolgreich hochgeladen und ersetzt.</div>
+                    <div class="notice" data-i18n="logo.uploadSuccess">Logo erfolgreich hochgeladen und ersetzt.</div>
                     <div style="margin-bottom:20px;">
                         <img src="/logo.png?v=${Date.now()}" alt="Neues Logo" style="max-width:320px; width:100%; height:auto; object-fit:contain; border:1px solid #e5e7eb; border-radius:12px; padding:12px; background:#fff;">
                     </div>
-                    <p><a class="small-link" href="/admin/logo">Zurück zur Logo-Verwaltung</a></p>
+                    <p><a class="small-link" href="/admin/logo" data-i18n="logo.backToLogo">Zurück zur Logo-Verwaltung</a></p>
                 </div>
             `));
         } catch (err) {
             console.error('Logo Upload Fehler:', err);
-            return res.status(500).send(renderAdminLayout(req, 'Logo verwalten', `
+            return res.status(500).send(renderAdminLayout(req, L.logo.title, `
                 <div class="topbar">
-                    <h1 class="page-title">Logo verwalten</h1>
+                    <h1 class="page-title" data-i18n="logo.title">Logo verwalten</h1>
                 </div>
                 <div class="card">
-                    <div class="notice notice-warn">Logo konnte nicht gespeichert werden.</div>
-                    <p><a class="small-link" href="/admin/logo">Zurück zur Logo-Verwaltung</a></p>
+                    <div class="notice notice-warn" data-i18n="logo.uploadError">Logo konnte nicht gespeichert werden.</div>
+                    <p><a class="small-link" href="/admin/logo" data-i18n="logo.backToLogo">Zurück zur Logo-Verwaltung</a></p>
                 </div>
             `));
         }
@@ -3737,10 +3827,10 @@ app.get('/admin/rooms', requireAdmin, requirePermission('rooms.view'), (req, res
                                 ${csrfField(req)}
                                 <input type="hidden" name="roomId" value="${escapeHtml(room.id)}">
                                 <input type="hidden" name="seat" value="${index + 1}">
-                                <button type="submit" class="btn-danger">Leeren</button>
+                                <button type="submit" class="btn-danger" data-i18n="rooms.clearSeat">Leeren</button>
                             </form>
                             `
-                            : '<span class="muted">Keine Rechte</span>'
+                            : '<span class="muted" data-i18n="rooms.noPermission">Keine Rechte</span>'
                     }
                 </td>
             </tr>
@@ -3768,24 +3858,24 @@ app.get('/admin/rooms', requireAdmin, requirePermission('rooms.view'), (req, res
                                 ${csrfField(req)}
                                 <input type="hidden" name="roomId" value="${escapeHtml(room.id)}">
 
-                                <label>Abteilung</label>
+                                <label data-i18n="rooms.department">Abteilung</label>
                                 <input type="text" name="abteilung" value="${escapeHtml(room.abteilung)}" required>
 
-                                <label>Raumnummer</label>
+                                <label data-i18n="rooms.roomNumber">Raumnummer</label>
                                 <input type="text" name="roomnumber" value="${escapeHtml(room.roomnumber)}" required>
 
-                                <label>TRMNL Terminal <span style="font-weight:400;opacity:.6;">(optional)</span></label>
+                                <label data-i18n="rooms.trmnlTerminal">TRMNL Terminal <span style="font-weight:400;opacity:.6;">(optional)</span></label>
                                 <select name="terminalId">
-                                    <option value="">– Kein Terminal –</option>
+                                    <option value="" data-i18n="rooms.noTerminal">– Kein Terminal –</option>
                                     ${Object.values(terminals).map(t => `<option value="${escapeHtml(t.id)}" ${room.terminalId === t.id ? 'selected' : ''}>${escapeHtml(t.name)}</option>`).join('')}
                                 </select>
 
-                                <button type="submit">Raum speichern</button>
+                                <button type="submit" data-i18n="rooms.saveRoom">Raum speichern</button>
                             </form>
                             `
                             : `
-                            <p style="margin-top:16px;"><strong>Abteilung:</strong> ${escapeHtml(room.abteilung)}</p>
-                            <p><strong>Raumnummer:</strong> ${escapeHtml(room.roomnumber)}</p>
+                            <p style="margin-top:16px;"><strong data-i18n="rooms.department">Abteilung:</strong> ${escapeHtml(room.abteilung)}</p>
+                            <p><strong data-i18n="rooms.roomNumber">Raumnummer:</strong> ${escapeHtml(room.roomnumber)}</p>
                             `
                     }
 
@@ -3795,7 +3885,7 @@ app.get('/admin/rooms', requireAdmin, requirePermission('rooms.view'), (req, res
                             <form method="POST" action="/admin/delete-room" style="margin-top:16px;">
                                 ${csrfField(req)}
                                 <input type="hidden" name="roomId" value="${escapeHtml(room.id)}">
-                                <button type="submit" class="btn-danger">Raum löschen</button>
+                                <button type="submit" class="btn-danger" data-i18n="rooms.deleteRoom">Raum löschen</button>
                             </form>
                             `
                             : ''
@@ -3804,10 +3894,10 @@ app.get('/admin/rooms', requireAdmin, requirePermission('rooms.view'), (req, res
                     <table style="margin-top:20px;">
                         <thead>
                             <tr>
-                                <th>Platz</th>
-                                <th>Name</th>
-                                <th>Status</th>
-                                <th>Aktion</th>
+                                <th data-i18n="rooms.seat">Platz</th>
+                                <th data-i18n="common.name">Name</th>
+                                <th data-i18n="common.status">Status</th>
+                                <th data-i18n="common.actions">Aktion</th>
                             </tr>
                         </thead>
                         <tbody>
@@ -3822,13 +3912,13 @@ app.get('/admin/rooms', requireAdmin, requirePermission('rooms.view'), (req, res
                                 <form method="POST" action="/admin/add-seat" class="inline-form">
                                     ${csrfField(req)}
                                     <input type="hidden" name="roomId" value="${escapeHtml(room.id)}">
-                                    <button type="submit" class="btn-secondary">+ Platz hinzufügen</button>
+                                    <button type="submit" class="btn-secondary" data-i18n="rooms.addSeat">+ Platz hinzufügen</button>
                                 </form>
                                 ${room.seats.length > 1 ? `
                                 <form method="POST" action="/admin/remove-seat" class="inline-form">
                                     ${csrfField(req)}
                                     <input type="hidden" name="roomId" value="${escapeHtml(room.id)}">
-                                    <button type="submit" class="btn-danger">− Letzten Platz entfernen</button>
+                                    <button type="submit" class="btn-danger" data-i18n="rooms.removeLastSeat">− Letzten Platz entfernen</button>
                                 </form>
                                 ` : ''}
                                 <span class="muted" style="font-size:13px;">${room.seats.length} Platz${room.seats.length !== 1 ? 'plätze' : ''}</span>
@@ -3843,33 +3933,33 @@ app.get('/admin/rooms', requireAdmin, requirePermission('rooms.view'), (req, res
 
     const content = `
         <div class="topbar">
-            <h1 class="page-title">Räume verwalten</h1>
+            <h1 class="page-title" data-i18n="rooms.title">Räume verwalten</h1>
         </div>
 
         ${
             hasPermission(req, 'rooms.create')
                 ? `
                 <div class="card">
-                    <h2>Neuen Raum anlegen</h2>
+                    <h2 data-i18n="rooms.addRoom">Neuen Raum anlegen</h2>
                     <form method="POST" action="/admin/create-room">
                         ${csrfField(req)}
-                        <label>Raum-ID</label>
-                        <input type="text" name="roomId" placeholder="z. B. room3" required>
+                        <label data-i18n="rooms.roomId">Raum-ID</label>
+                        <input type="text" name="roomId" placeholder="z. B. room3" data-i18n-placeholder="rooms.roomIdPlaceholder" required>
 
-                        <label>Abteilung</label>
-                        <input type="text" name="abteilung" placeholder="z. B. Vertrieb" required>
+                        <label data-i18n="rooms.department">Abteilung</label>
+                        <input type="text" name="abteilung" placeholder="z. B. Vertrieb" data-i18n-placeholder="rooms.departmentPlaceholder" required>
 
-                        <label>Raumnummer</label>
-                        <input type="text" name="roomnumber" placeholder="z. B. R.105" required>
+                        <label data-i18n="rooms.roomNumber">Raumnummer</label>
+                        <input type="text" name="roomnumber" placeholder="z. B. R.105" data-i18n-placeholder="rooms.roomNumberPlaceholder" required>
 
-                        <button type="submit">Raum erstellen</button>
+                        <button type="submit" data-i18n="rooms.createRoom">Raum erstellen</button>
                     </form>
                 </div>
                 `
                 : ''
         }
 
-        ${roomCards || '<div class="card"><p>Keine Räume vorhanden.</p></div>'}
+        ${roomCards || '<div class="card"><p data-i18n="rooms.noRooms">Keine Räume vorhanden.</p></div>'}
 
         <script>
         function toggleRoom(rid) {
@@ -3883,7 +3973,7 @@ app.get('/admin/rooms', requireAdmin, requirePermission('rooms.view'), (req, res
         </script>
     `;
 
-    res.send(renderAdminLayout(req, 'Räume', content));
+    res.send(renderAdminLayout(req, L.rooms.title, content));
 });
 
 app.post('/admin/create-room', requireAdmin, requirePermission('rooms.create'), requireCsrf, (req, res) => {
@@ -3891,25 +3981,26 @@ app.post('/admin/create-room', requireAdmin, requirePermission('rooms.create'), 
         const roomId = String(req.body.roomId || '').trim();
         const abteilung = String(req.body.abteilung || '').trim();
         const roomnumber = String(req.body.roomnumber || '').trim();
+        const L = loadLocale();
 
         if (!roomId || !abteilung || !roomnumber) {
-            return res.status(400).send('Fehlende Daten');
+            return res.status(400).send(L.errors?.missingData);
         }
 
         if (roomId.length > 64 || abteilung.length > 128 || roomnumber.length > 32) {
-            return res.status(400).send('Eingabe zu lang');
+            return res.status(400).send(L.errors?.inputTooLong);
         }
 
         if (!/^[a-zA-Z0-9_\-]+$/.test(roomId)) {
-            return res.status(400).send('Raum-ID darf nur Buchstaben, Zahlen, - und _ enthalten');
+            return res.status(400).send(L.errors?.invalidRoomId);
         }
 
         if (['__proto__', 'constructor', 'prototype'].includes(roomId)) {
-            return res.status(400).send('Ungültige Raum-ID');
+            return res.status(400).send(L.errors?.reservedRoomId);
         }
 
         if (rooms[roomId]) {
-            return res.status(400).send('Raum existiert bereits');
+            return res.status(400).send(L.errors?.roomAlreadyExists);
         }
 
         rooms[roomId] = {
@@ -3928,7 +4019,8 @@ app.post('/admin/create-room', requireAdmin, requirePermission('rooms.create'), 
         return res.redirect('/admin/rooms');
     } catch (err) {
         console.error(err);
-        return res.status(500).send('Raum konnte nicht gespeichert werden');
+        const L = loadLocale();
+        return res.status(500).send(L.errors?.roomSaveFailed);
     }
 });
 
@@ -3936,9 +4028,10 @@ app.post('/admin/update-room', requireAdmin, requirePermission('rooms.edit'), re
     try {
         const roomId = String(req.body.roomId || '').trim();
         const room = getRoom(roomId);
+        const L = loadLocale();
 
         if (!room) {
-            return res.status(404).send('Raum nicht gefunden');
+            return res.status(404).send(L.errors?.roomNotFound);
         }
 
         room.abteilung = String(req.body.abteilung || '').trim();
@@ -3951,15 +4044,17 @@ app.post('/admin/update-room', requireAdmin, requirePermission('rooms.edit'), re
         return res.redirect('/admin/rooms');
     } catch (err) {
         console.error(err);
-        return res.status(500).send('Raum konnte nicht aktualisiert werden');
+        const L = loadLocale();
+        return res.status(500).send(L.errors?.roomUpdateFailed);
     }
 });
 
 app.post('/admin/test-trmnl-push', requireAdmin, requirePermission('terminals.edit'), requireCsrf, async (req, res) => {
     const terminalId = String(req.body.terminalId || '').trim();
     const terminal = getTerminal(terminalId);
-    if (!terminal) return res.status(404).json({ error: 'Terminal nicht gefunden' });
-    if (terminal.trmnlMode !== 'webhook' || !terminal.trmnlWebhookUrl) return res.json({ error: 'Kein Webhook konfiguriert' });
+    const L = loadLocale();
+    if (!terminal) return res.status(404).json({ error: L.errors?.terminalNotFound });
+    if (terminal.trmnlMode !== 'webhook' || !terminal.trmnlWebhookUrl) return res.json({ error: L.errors?.noWebhookConfigured });
 
     const assignedRoom = Object.values(rooms).find(r => r.terminalId === terminalId);
     const payload = assignedRoom ? renderRoomApiJson(assignedRoom) : { abteilung: 'Test', roomnumber: '-', seats: [] };
@@ -3980,13 +4075,14 @@ app.post('/admin/test-trmnl-push', requireAdmin, requirePermission('terminals.ed
 app.post('/admin/device-status', requireAdmin, requirePermission('terminals.view'), requireCsrf, async (req, res) => {
     const terminalId = String(req.body.terminalId || '').trim();
     const terminal = getTerminal(terminalId);
-    if (!terminal) return res.status(404).json({ error: 'Terminal nicht gefunden' });
-    if (!terminal.trmnlDeviceApiKey || !terminal.trmnlDeviceMac) return res.status(400).json({ error: 'Account API Key und MAC-Adresse fehlen' });
+    const L = loadLocale();
+    if (!terminal) return res.status(404).json({ error: L.errors?.terminalNotFound });
+    if (!terminal.trmnlDeviceApiKey || !terminal.trmnlDeviceMac) return res.status(400).json({ error: L.errors?.apiKeyAndMacMissing });
 
     try {
         const headers = { 'Authorization': `Bearer ${decryptValue(terminal.trmnlDeviceApiKey)}`, 'Content-Type': 'application/json' };
         const listRes = await fetch('https://usetrmnl.com/api/devices', { headers });
-        if (!listRes.ok) return res.json({ error: `TRMNL Fehler: ${listRes.status}` });
+        if (!listRes.ok) return res.json({ error: `${L.errors?.trmnlError} ${listRes.status}` });
 
         const list = await listRes.json();
         const devices = list.data || list.devices || list;
@@ -3994,7 +4090,7 @@ app.post('/admin/device-status', requireAdmin, requirePermission('terminals.view
             ? devices.find(d => (d.mac_address || '').toUpperCase() === terminal.trmnlDeviceMac.toUpperCase())
             : null;
 
-        if (!device) return res.json({ error: `Gerät mit MAC ${terminal.trmnlDeviceMac} nicht gefunden` });
+        if (!device) return res.json({ error: (L.errors?.deviceWithMacNotFound).replace('{mac}', terminal.trmnlDeviceMac) });
         return res.json({ device });
     } catch (err) {
         return res.json({ error: err.message });
@@ -4005,18 +4101,19 @@ app.post('/admin/device-status', requireAdmin, requirePermission('terminals.view
 app.get('/admin/terminals/status/:terminalId', requireAdmin, requirePermission('terminals.view'), async (req, res) => {
     const terminalId = String(req.params.terminalId || '').trim();
     const terminal = getTerminal(terminalId);
-    if (!terminal) return res.status(404).json({ error: 'Terminal nicht gefunden' });
-    if (!terminal.trmnlDeviceApiKey || !terminal.trmnlDeviceMac) return res.status(400).json({ error: 'Kein API Key / MAC konfiguriert' });
+    const L = loadLocale();
+    if (!terminal) return res.status(404).json({ error: L.errors?.terminalNotFound });
+    if (!terminal.trmnlDeviceApiKey || !terminal.trmnlDeviceMac) return res.status(400).json({ error: L.errors?.noApiKeyOrMac });
     try {
         const headers = { 'Authorization': `Bearer ${decryptValue(terminal.trmnlDeviceApiKey)}`, 'Content-Type': 'application/json' };
         const listRes = await fetch('https://usetrmnl.com/api/devices', { headers });
-        if (!listRes.ok) return res.json({ error: `TRMNL Fehler: ${listRes.status}` });
+        if (!listRes.ok) return res.json({ error: `${L.errors?.trmnlError} ${listRes.status}` });
         const list = await listRes.json();
         const devices = list.data || list.devices || list;
         const device = Array.isArray(devices)
             ? devices.find(d => (d.mac_address || '').toUpperCase() === terminal.trmnlDeviceMac.toUpperCase())
             : null;
-        if (!device) return res.json({ error: 'Gerät nicht gefunden' });
+        if (!device) return res.json({ error: L.errors?.deviceNotFound });
         return res.json({ device });
     } catch (err) {
         return res.json({ error: err.message });
@@ -4277,8 +4374,9 @@ app.post('/admin/server/reboot', requireAdmin, requirePermission('server.reboot'
 app.post('/admin/save-sleep-schedule', requireAdmin, requirePermission('terminals.edit'), requireCsrf, async (req, res) => {
     const terminalId = String(req.body.terminalId || '').trim();
     const terminal = getTerminal(terminalId);
-    if (!terminal) return res.status(404).json({ error: 'Terminal nicht gefunden' });
-    if (!terminal.trmnlDeviceApiKey || !terminal.trmnlDeviceMac) return res.status(400).json({ error: 'Account API Key und MAC-Adresse fehlen' });
+    const L = loadLocale();
+    if (!terminal) return res.status(404).json({ error: L.errors?.terminalNotFound });
+    if (!terminal.trmnlDeviceApiKey || !terminal.trmnlDeviceMac) return res.status(400).json({ error: L.errors?.apiKeyAndMacMissing });
 
     try {
         const headers = {
@@ -4289,7 +4387,7 @@ app.post('/admin/save-sleep-schedule', requireAdmin, requirePermission('terminal
         const listRes = await fetch('https://usetrmnl.com/api/devices', { headers });
         if (!listRes.ok) {
             const errText = await listRes.text();
-            return res.json({ error: `TRMNL Fehler: ${listRes.status}`, body: errText.slice(0, 200) });
+            return res.json({ error: `${L.errors?.trmnlError} ${listRes.status}`, body: errText.slice(0, 200) });
         }
 
         const list = await listRes.json();
@@ -4298,7 +4396,7 @@ app.post('/admin/save-sleep-schedule', requireAdmin, requirePermission('terminal
             ? devices.find(d => (d.mac_address || '').toUpperCase() === terminal.trmnlDeviceMac.toUpperCase())
             : null;
 
-        if (!device) return res.json({ error: `Gerät mit MAC ${terminal.trmnlDeviceMac} nicht gefunden`, all_devices: Array.isArray(devices) ? devices.map(d => d.mac_address) : devices });
+        if (!device) return res.json({ error: (L.errors?.deviceWithMacNotFound).replace('{mac}', terminal.trmnlDeviceMac), all_devices: Array.isArray(devices) ? devices.map(d => d.mac_address) : devices });
 
         // Zeiten direkt aus Request lesen und in Terminal speichern
         const toMinutes = t => { const [h, m] = (t || '00:00').split(':').map(Number); return h * 60 + m; };
@@ -4367,49 +4465,49 @@ app.get('/admin/terminals', requireAdmin, requirePermission('terminals.view'), (
                 ${csrfField(req)}
                 <input type="hidden" name="terminalId" value="${escapeHtml(t.id)}">
 
-                <label>Name</label>
+                <label data-i18n="common.name">Name</label>
                 <input type="text" name="name" value="${escapeHtml(t.name)}" required>
 
-                <label>Modus</label>
+                <label data-i18n="terminals.mode">Modus</label>
                 <select name="trmnlMode" id="trmnlMode_${escapeHtml(t.id)}" onchange="trmnlModeChange('${escapeHtml(t.id)}')">
-                    <option value="none"    ${(t.trmnlMode||'none')==='none'    ? 'selected' : ''}>Kein TRMNL</option>
-                    <option value="polling" ${(t.trmnlMode||'none')==='polling' ? 'selected' : ''}>Polling (TRMNL zieht Daten selbst)</option>
-                    <option value="webhook" ${(t.trmnlMode||'none')==='webhook' ? 'selected' : ''}>Webhook / Push</option>
+                    <option value="none"    ${(t.trmnlMode||'none')==='none'    ? 'selected' : ''} data-i18n="terminals.modeNone">Kein TRMNL</option>
+                    <option value="polling" ${(t.trmnlMode||'none')==='polling' ? 'selected' : ''} data-i18n="terminals.modePolling">Polling (TRMNL zieht Daten selbst)</option>
+                    <option value="webhook" ${(t.trmnlMode||'none')==='webhook' ? 'selected' : ''} data-i18n="terminals.modeWebhook">Webhook / Push</option>
                 </select>
 
                 <div id="trmnl_polling_${escapeHtml(t.id)}" style="display:${(t.trmnlMode||'none')==='polling' ? 'block' : 'none'}">
-                    <p style="font-size:13px;opacity:.7;margin-bottom:8px;">TRMNL fragt die Daten selbst ab. Kein Push von DeskView nötig — Intervall direkt in TRMNL einstellen.</p>
+                    <p style="font-size:13px;opacity:.7;margin-bottom:8px;" data-i18n="terminals.pollingInfo">TRMNL fragt die Daten selbst ab. Kein Push von DeskView nötig — Intervall direkt in TRMNL einstellen.</p>
                 </div>
 
                 <div id="trmnl_webhook_${escapeHtml(t.id)}" style="display:${(t.trmnlMode||'none')==='webhook' ? 'block' : 'none'}">
-                    <p style="font-size:13px;opacity:.7;margin-bottom:8px;">Bei jeder Änderung werden die Daten an TRMNL gesendet. Das Gerät zeigt die Änderung beim nächsten Poll-Zyklus an.</p>
-                    <label>Webhook URL <span style="font-weight:400;opacity:.6;">(aus TRMNL Plugin → Webhook-Strategie)</span></label>
+                    <p style="font-size:13px;opacity:.7;margin-bottom:8px;" data-i18n="terminals.webhookInfo">Bei jeder Änderung werden die Daten an TRMNL gesendet. Das Gerät zeigt die Änderung beim nächsten Poll-Zyklus an.</p>
+                    <label data-i18n="terminals.webhookUrl">Webhook URL <span style="font-weight:400;opacity:.6;">(aus TRMNL Plugin → Webhook-Strategie)</span></label>
                     <input type="text" name="trmnlWebhookUrl" value="${escapeHtml(t.trmnlWebhookUrl || '')}" placeholder="https://usetrmnl.com/api/custom_plugins/...">
                 </div>
 
                 <hr style="margin:20px 0;border:none;border-top:1px solid var(--border);">
-                <h3 style="font-size:15px;margin:0 0 10px 0;">Gerät <span style="font-weight:400;opacity:.6;font-size:13px;">(für Sleep Schedule &amp; Status)</span></h3>
+                <h3 style="font-size:15px;margin:0 0 10px 0;" data-i18n="terminals.device">Gerät <span style="font-weight:400;opacity:.6;font-size:13px;">(für Sleep Schedule &amp; Status)</span></h3>
 
-                <label>TRMNL Account API Key <span style="font-weight:400;opacity:.6;">(Account → Settings → API Key)</span></label>
+                <label data-i18n="terminals.apiKey">TRMNL Account API Key <span style="font-weight:400;opacity:.6;">(Account → Settings → API Key)</span></label>
                 <div class="field-wrap">
                     <input type="password" id="trmnlApiKey_${escapeHtml(t.id)}" name="trmnlDeviceApiKey" value="${escapeHtml(decryptValue(t.trmnlDeviceApiKey) || '')}" placeholder="Account API Key" autocomplete="off">
                     <button type="button" class="eye-btn" data-eye="trmnlApiKey_${escapeHtml(t.id)}" onclick="toggleVis('trmnlApiKey_${escapeHtml(t.id)}')">&#128065;</button>
                 </div>
 
-                <label>Device MAC-Adresse</label>
+                <label data-i18n="terminals.macAddress">Device MAC-Adresse</label>
                 <div class="field-wrap">
                     <input type="password" id="trmnlMac_${escapeHtml(t.id)}" name="trmnlDeviceMac" value="${escapeHtml(t.trmnlDeviceMac || '')}" placeholder="z. B. 08:92:72:65:F8:9C" autocomplete="off">
                     <button type="button" class="eye-btn" data-eye="trmnlMac_${escapeHtml(t.id)}" onclick="toggleVis('trmnlMac_${escapeHtml(t.id)}')">&#128065;</button>
                 </div>
 
-                <label>Status Aktualisierungsintervall</label>
+                <label data-i18n="terminals.statusRefreshInterval">Status Aktualisierungsintervall</label>
                 <select name="statusRefreshInterval">
                     ${[15,30,45,60,120,240,480].map(v=>`<option value="${v}" ${(t.statusRefreshInterval||30)===v?'selected':''}>${v<60?v+' Min':v/60+(v/60===1?' Std':' Std')}</option>`).join('')}
                 </select>
 
                 <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:8px;">
-                    <button type="submit">Terminal speichern</button>
-                    <button type="button" onclick="syncTerminalName('${escapeHtml(t.id)}')" style="background:#6366f1;">↻ Name aus TRMNL</button>
+                    <button type="submit" data-i18n="terminals.saveTerminal">Terminal speichern</button>
+                    <button type="button" onclick="syncTerminalName('${escapeHtml(t.id)}')" style="background:#6366f1;" data-i18n="terminals.syncName">↻ Name aus TRMNL</button>
                 </div>
             </form>
 
@@ -4417,33 +4515,33 @@ app.get('/admin/terminals', requireAdmin, requirePermission('terminals.view'), (
                 <form id="trmnlTestForm_${escapeHtml(t.id)}" class="dev-only" style="margin:0;">
                     <input type="hidden" name="_csrf" value="${getCsrfToken(req)}">
                     <input type="hidden" name="terminalId" value="${escapeHtml(t.id)}">
-                    <button type="button" onclick="testTrmnlPushT('${escapeHtml(t.id)}')" style="background:#6b7280;">Push testen</button>
+                    <button type="button" onclick="testTrmnlPushT('${escapeHtml(t.id)}')" style="background:#6b7280;" data-i18n="terminals.testPush">Push testen</button>
                 </form>
                 <form id="trmnlStatusForm_${escapeHtml(t.id)}" style="margin:0;">
                     <input type="hidden" name="_csrf" value="${getCsrfToken(req)}">
                     <input type="hidden" name="terminalId" value="${escapeHtml(t.id)}">
-                    <button type="button" onclick="loadDeviceStatusT('${escapeHtml(t.id)}')" style="background:#6366f1;">Gerätestatus</button>
+                    <button type="button" onclick="loadDeviceStatusT('${escapeHtml(t.id)}')" style="background:#6366f1;" data-i18n="terminals.deviceStatus">Gerätestatus</button>
                 </form>
             </div>
             <div id="trmnlDeviceStatus_${escapeHtml(t.id)}" style="display:none;margin-top:10px;background:#1e1e2e;color:#cdd6f4;padding:12px;border-radius:8px;font-size:13px;line-height:1.8;"></div>
             <pre id="trmnlTestResult_${escapeHtml(t.id)}" class="dev-only" style="display:none;margin-top:8px;background:#111;color:#0f0;padding:10px;border-radius:6px;font-size:12px;overflow:auto;max-height:200px;"></pre>
 
             <div style="margin-top:16px;padding:14px;border:1px solid var(--border);border-radius:8px;">
-                <h4 style="margin:0 0 10px 0;font-size:14px;">😴 Sleep Schedule</h4>
+                <h4 style="margin:0 0 10px 0;font-size:14px;" data-i18n="terminals.sleepSchedule">😴 Sleep Schedule</h4>
                 <form id="trmnlSleepForm_${escapeHtml(t.id)}" style="margin:0;">
                     <input type="hidden" name="_csrf" value="${getCsrfToken(req)}">
                     <input type="hidden" name="terminalId" value="${escapeHtml(t.id)}">
                     <div style="display:flex;gap:16px;margin-bottom:10px;">
                         <div style="flex:1;">
-                            <label style="font-size:13px;">Aktiv ab (Morgens)</label>
+                            <label style="font-size:13px;" data-i18n="terminals.activeFrom">Aktiv ab (Morgens)</label>
                             <input type="time" name="trmnlSleepEnd" value="${escapeHtml(t.trmnlSleepEnd || '07:00')}">
                         </div>
                         <div style="flex:1;">
-                            <label style="font-size:13px;">Schlafen ab (Abends)</label>
+                            <label style="font-size:13px;" data-i18n="terminals.sleepFrom">Schlafen ab (Abends)</label>
                             <input type="time" name="trmnlSleepStart" value="${escapeHtml(t.trmnlSleepStart || '19:00')}">
                         </div>
                     </div>
-                    <button type="button" onclick="saveSleepScheduleT('${escapeHtml(t.id)}')" style="background:#059669;">Sleep Schedule speichern</button>
+                    <button type="button" onclick="saveSleepScheduleT('${escapeHtml(t.id)}')" style="background:#059669;" data-i18n="terminals.saveSleepSchedule">Sleep Schedule speichern</button>
                     <span id="trmnlSleepStatus_${escapeHtml(t.id)}" style="display:none;font-size:13px;margin-left:10px;"></span>
                 </form>
             </div>
@@ -4453,7 +4551,7 @@ app.get('/admin/terminals', requireAdmin, requirePermission('terminals.view'), (
             <form method="POST" action="/admin/terminals/delete" style="margin-top:16px;" onsubmit="return confirm('Terminal wirklich löschen?')">
                 ${csrfField(req)}
                 <input type="hidden" name="terminalId" value="${escapeHtml(t.id)}">
-                <button type="submit" class="btn-danger">Terminal löschen</button>
+                <button type="submit" class="btn-danger" data-i18n="terminals.deleteTerminal">Terminal löschen</button>
             </form>
             ` : ''}
             </div><!-- /termBody -->
@@ -4462,19 +4560,19 @@ app.get('/admin/terminals', requireAdmin, requirePermission('terminals.view'), (
 
     const createForm = hasPermission(req, 'terminals.create') ? `
     <div class="card" style="margin-bottom:20px;">
-        <h2 style="margin:0 0 16px 0;font-size:16px;">Neues Terminal anlegen</h2>
+        <h2 style="margin:0 0 16px 0;font-size:16px;" data-i18n="terminals.addTerminal">Neues Terminal anlegen</h2>
         <form method="POST" action="/admin/terminals/create">
             ${csrfField(req)}
-            <label>Name <span style="font-weight:400;opacity:.6;">(z. B. "Demo 1" oder "Raum 201")</span></label>
-            <input type="text" name="name" required placeholder="Terminal Name">
-            <button type="submit">Terminal erstellen</button>
+            <label data-i18n="terminals.terminalName">Name <span style="font-weight:400;opacity:.6;">(z. B. "Demo 1" oder "Raum 201")</span></label>
+            <input type="text" name="name" required placeholder="Terminal Name" data-i18n-placeholder="terminals.terminalNamePlaceholder">
+            <button type="submit" data-i18n="terminals.createTerminal">Terminal erstellen</button>
         </form>
     </div>` : '';
 
     const content = `
-    <div class="topbar"><h1>Terminals</h1></div>
+    <div class="topbar"><h1 data-i18n="terminals.title">Terminals</h1></div>
     ${createForm}
-    ${cards || '<div class="card"><p style="opacity:.6;">Noch keine Terminals vorhanden.</p></div>'}
+    ${cards || '<div class="card"><p style="opacity:.6;" data-i18n="terminals.noTerminals">Noch keine Terminals vorhanden.</p></div>'}
     <script>
         function toggleTerminal(tid) {
             var body  = document.getElementById('termBody_' + tid);
@@ -4579,19 +4677,21 @@ app.get('/admin/terminals', requireAdmin, requirePermission('terminals.view'), (
         });
     </script>`;
 
-    res.send(renderAdminLayout(req, 'Terminals', content));
+    res.send(renderAdminLayout(req, L.terminals.title, content));
 });
 
 app.post('/admin/terminals/create', requireAdmin, requirePermission('terminals.create'), requireCsrf, (req, res) => {
     try {
         const name = String(req.body.name || '').trim();
-        if (!name) return res.status(400).send('Name fehlt');
+        const L = loadLocale();
+        if (!name) return res.status(400).send(L.errors?.nameMissing);
         const id = 'terminal_' + Date.now();
         terminals[id] = { id, name, trmnlMode: 'none', trmnlWebhookUrl: '', trmnlDeviceApiKey: '', trmnlDeviceMac: '', trmnlSleepStart: '19:00', trmnlSleepEnd: '07:00', statusRefreshInterval: 30 };
         saveTerminals();
         return res.redirect('/admin/terminals');
     } catch (err) {
-        return res.status(500).send('Fehler beim Erstellen');
+        const L = loadLocale();
+        return res.status(500).send(L.errors?.terminalCreateFailed);
     }
 });
 
@@ -4599,7 +4699,8 @@ app.post('/admin/terminals/update', requireAdmin, requirePermission('terminals.e
     try {
         const terminalId = String(req.body.terminalId || '').trim();
         const terminal = getTerminal(terminalId);
-        if (!terminal) return res.status(404).send('Terminal nicht gefunden');
+        const L = loadLocale();
+        if (!terminal) return res.status(404).send(L.errors?.roomNotFound);
         terminal.name = String(req.body.name || '').trim() || terminal.name;
         terminal.trmnlMode = ['none','polling','webhook'].includes(req.body.trmnlMode) ? req.body.trmnlMode : 'none';
         terminal.trmnlWebhookUrl = String(req.body.trmnlWebhookUrl || '').trim();
@@ -4611,39 +4712,43 @@ app.post('/admin/terminals/update', requireAdmin, requirePermission('terminals.e
         saveTerminals();
         return res.redirect('/admin/terminals');
     } catch (err) {
-        return res.status(500).send('Fehler beim Speichern');
+        const L = loadLocale();
+        return res.status(500).send(L.errors?.terminalSaveFailed);
     }
 });
 
 app.post('/admin/terminals/delete', requireAdmin, requirePermission('terminals.delete'), requireCsrf, (req, res) => {
     try {
         const terminalId = String(req.body.terminalId || '').trim();
-        if (!terminals[terminalId]) return res.status(404).send('Terminal nicht gefunden');
+        const L = loadLocale();
+        if (!terminals[terminalId]) return res.status(404).send(L.errors?.adminNotFound);
         delete terminals[terminalId];
         Object.values(rooms).forEach(r => { if (r.terminalId === terminalId) r.terminalId = null; });
         saveTerminals();
         saveRooms();
         return res.redirect('/admin/terminals');
     } catch (err) {
-        return res.status(500).send('Fehler beim Löschen');
+        const L = loadLocale();
+        return res.status(500).send(L.errors?.terminalDeleteFailed);
     }
 });
 
 app.post('/admin/terminals/sync-name', requireAdmin, requirePermission('terminals.edit'), requireCsrf, async (req, res) => {
     const terminalId = String(req.body.terminalId || '').trim();
     const terminal = getTerminal(terminalId);
-    if (!terminal) return res.status(404).json({ error: 'Terminal nicht gefunden' });
-    if (!terminal.trmnlDeviceApiKey || !terminal.trmnlDeviceMac) return res.status(400).json({ error: 'API Key und MAC fehlen' });
+    const L = loadLocale();
+    if (!terminal) return res.status(404).json({ error: L.errors?.terminalNotFound });
+    if (!terminal.trmnlDeviceApiKey || !terminal.trmnlDeviceMac) return res.status(400).json({ error: L.errors?.apiKeyAndMacMissing2 });
     try {
         const headers = { 'Authorization': `Bearer ${decryptValue(terminal.trmnlDeviceApiKey)}`, 'Content-Type': 'application/json' };
         const listRes = await fetch('https://usetrmnl.com/api/devices', { headers });
-        if (!listRes.ok) return res.json({ error: `TRMNL Fehler: ${listRes.status}` });
+        if (!listRes.ok) return res.json({ error: `${L.errors?.trmnlError} ${listRes.status}` });
         const list = await listRes.json();
         const devices = list.data || list.devices || list;
         const device = Array.isArray(devices)
             ? devices.find(d => (d.mac_address || '').toUpperCase() === terminal.trmnlDeviceMac.toUpperCase())
             : null;
-        if (!device) return res.json({ error: 'Gerät nicht gefunden' });
+        if (!device) return res.json({ error: L.errors?.deviceNotFound });
         if (device.name) { terminal.name = device.name; saveTerminals(); }
         return res.json({ name: terminal.name });
     } catch (err) {
@@ -4654,9 +4759,10 @@ app.post('/admin/terminals/sync-name', requireAdmin, requirePermission('terminal
 app.post('/admin/delete-room', requireAdmin, requirePermission('rooms.delete'), requireCsrf, (req, res) => {
     try {
         const roomId = String(req.body.roomId || '').trim();
+        const L = loadLocale();
 
         if (!rooms[roomId]) {
-            return res.status(404).send('Raum nicht gefunden');
+            return res.status(404).send(L.errors?.roomNotFound);
         }
 
         delete rooms[roomId];
@@ -4665,7 +4771,8 @@ app.post('/admin/delete-room', requireAdmin, requirePermission('rooms.delete'), 
         return res.redirect('/admin/rooms');
     } catch (err) {
         console.error(err);
-        return res.status(500).send('Raum konnte nicht gelöscht werden');
+        const L = loadLocale();
+        return res.status(500).send(L.errors?.roomDeleteFailed);
     }
 });
 
@@ -4673,13 +4780,14 @@ app.post('/admin/add-seat', requireAdmin, requirePermission('rooms.edit'), requi
     try {
         const roomId = String(req.body.roomId || '').trim();
         const room = getRoom(roomId);
+        const L = loadLocale();
 
         if (!room) {
-            return res.status(404).send('Raum nicht gefunden');
+            return res.status(404).send(L.errors?.roomNotFound);
         }
 
         if (room.seats.length >= 20) {
-            return res.status(400).send('Maximal 20 Plätze pro Raum');
+            return res.status(400).send(L.errors?.maxSeats);
         }
 
         room.seats.push({ name: 'Frei', title: '' });
@@ -4688,7 +4796,8 @@ app.post('/admin/add-seat', requireAdmin, requirePermission('rooms.edit'), requi
         return res.redirect('/admin/rooms');
     } catch (err) {
         console.error(err);
-        return res.status(500).send('Platz konnte nicht hinzugefügt werden');
+        const L = loadLocale();
+        return res.status(500).send(L.errors?.seatAddFailed);
     }
 });
 
@@ -4696,13 +4805,14 @@ app.post('/admin/remove-seat', requireAdmin, requirePermission('rooms.edit'), re
     try {
         const roomId = String(req.body.roomId || '').trim();
         const room = getRoom(roomId);
+        const L = loadLocale();
 
         if (!room) {
-            return res.status(404).send('Raum nicht gefunden');
+            return res.status(404).send(L.errors?.roomNotFound);
         }
 
         if (room.seats.length <= 1) {
-            return res.status(400).send('Mindestens 1 Platz erforderlich');
+            return res.status(400).send(L.errors?.minSeats);
         }
 
         room.seats.pop();
@@ -4711,7 +4821,8 @@ app.post('/admin/remove-seat', requireAdmin, requirePermission('rooms.edit'), re
         return res.redirect('/admin/rooms');
     } catch (err) {
         console.error(err);
-        return res.status(500).send('Platz konnte nicht entfernt werden');
+        const L = loadLocale();
+        return res.status(500).send(L.errors?.seatRemoveFailed);
     }
 });
 
@@ -4721,8 +4832,9 @@ app.post('/admin/clear-seat', requireAdmin, requirePermission('rooms.clearSeat')
         const seat = Number.parseInt(req.body.seat, 10);
         const room = getRoom(roomId);
 
+        const L = loadLocale();
         if (!room || !Number.isInteger(seat) || seat < 1 || seat > room.seats.length) {
-            return res.status(400).send('Ungültige Daten');
+            return res.status(400).send(L.errors?.invalidData);
         }
 
         room.seats[seat - 1] = { name: 'Frei', title: '' };
@@ -4732,7 +4844,8 @@ app.post('/admin/clear-seat', requireAdmin, requirePermission('rooms.clearSeat')
         return res.redirect('/admin/rooms');
     } catch (err) {
         console.error(err);
-        return res.status(500).send('Platz konnte nicht geleert werden');
+        const L = loadLocale();
+        return res.status(500).send(L.errors?.seatClearFailed);
     }
 });
 
@@ -4755,16 +4868,16 @@ app.get('/admin/links', requireAdmin, requirePermission('links.view'), (req, res
         return `
             <div class="card">
                 <h2>${escapeHtml(room.abteilung)}</h2>
-                <p><strong>Raum-ID:</strong> ${escapeHtml(room.id)}</p>
-                <p><strong>Raumnummer:</strong> ${escapeHtml(room.roomnumber)}</p>
+                <p><strong data-i18n="links.roomId">Raum-ID:</strong> ${escapeHtml(room.id)}</p>
+                <p><strong data-i18n="rooms.roomNumber">Raumnummer:</strong> ${escapeHtml(room.roomnumber)}</p>
 
                 <div class="links-row">
-                    <a class="small-link" href="/${encodeURIComponent(room.id)}" target="_blank">Raumansicht öffnen</a>
-                    <a class="small-link" href="/${encodeURIComponent(room.id)}/api/deskview" target="_blank">DeskView API öffnen</a>
-                    <a class="small-link" href="/${encodeURIComponent(room.id)}/api/Komvera" target="_blank">Legacy API öffnen</a>
+                    <a class="small-link" href="/${encodeURIComponent(room.id)}" target="_blank" data-i18n="links.openRoom">Raumansicht öffnen</a>
+                    <a class="small-link" href="/${encodeURIComponent(room.id)}/api/deskview" target="_blank" data-i18n="links.openDeskviewApi">DeskView API öffnen</a>
+                    <a class="small-link" href="/${encodeURIComponent(room.id)}/api/Komvera" target="_blank" data-i18n="links.openLegacyApi">Legacy API öffnen</a>
                 </div>
 
-                <p><strong>Sitzplätze:</strong></p>
+                <p><strong data-i18n="rooms.seats">Sitzplätze:</strong></p>
                 <div class="links-row">
                     ${seatLinks}
                 </div>
@@ -4774,11 +4887,11 @@ app.get('/admin/links', requireAdmin, requirePermission('links.view'), (req, res
 
     const content = `
         <div class="topbar">
-            <h1 class="page-title">Raumlinks / Ansichten</h1>
+            <h1 class="page-title" data-i18n="links.title">Raumlinks / Ansichten</h1>
         </div>
 
         <div class="grid-2">
-            ${roomCards || '<div class="card"><p>Keine Räume vorhanden.</p></div>'}
+            ${roomCards || '<div class="card"><p data-i18n="links.noLinks">Keine Räume vorhanden.</p></div>'}
         </div>
     `;
 
@@ -4804,7 +4917,7 @@ app.get('/admin/admins', requireAdmin, requirePermission('admins.view'), (req, r
                     !admin.master && hasPermission(req, 'admins.edit')
                         ? `
                         <form method="GET" action="/admin/admins/edit/${encodeURIComponent(admin.username)}" class="inline-form">
-                            <button type="submit" class="btn-secondary">Bearbeiten</button>
+                            <button type="submit" class="btn-secondary" data-i18n="common.edit">Bearbeiten</button>
                         </form>
                         `
                         : ''
@@ -4816,20 +4929,20 @@ app.get('/admin/admins', requireAdmin, requirePermission('admins.view'), (req, r
                         <form method="POST" action="/admin/admins/delete" class="inline-form" style="margin-left:8px;">
                             ${csrfField(req)}
                             <input type="hidden" name="username" value="${escapeHtml(admin.username)}">
-                            <button type="submit" class="btn-danger">Löschen</button>
+                            <button type="submit" class="btn-danger" data-i18n="common.delete">Löschen</button>
                         </form>
                         `
                         : ''
                 }
 
-                ${admin.master ? '<span class="muted">Nicht löschbar</span>' : ''}
+                ${admin.master ? '<span class="muted" data-i18n="admins.notDeletable">Nicht löschbar</span>' : ''}
             </td>
         </tr>
     `).join('');
 
     const content = `
         <div class="topbar">
-            <h1 class="page-title">Admins verwalten</h1>
+            <h1 class="page-title" data-i18n="admins.title">Admins verwalten</h1>
         </div>
         ${req.query.error ? `<div class="notice" style="border-color:#dc2626;color:#dc2626;margin-bottom:16px;">❌ ${escapeHtml(String(req.query.error))}</div>` : ''}
 
@@ -4837,30 +4950,30 @@ app.get('/admin/admins', requireAdmin, requirePermission('admins.view'), (req, r
             hasPermission(req, 'admins.create')
                 ? `
                 <div class="card">
-                    <h2>Neuen Admin anlegen</h2>
-                    <div class="notice">
+                    <h2 data-i18n="admins.addAdmin">Neuen Admin anlegen</h2>
+                    <div class="notice" data-i18n="admins.oneMasterNote">
                         Es kann nur genau einen Master-Admin geben. Neue Admins werden immer als normale Admins erstellt.
                     </div>
                     <form method="POST" action="/admin/admins/create">
                         ${csrfField(req)}
-                        <label>Benutzername</label>
+                        <label data-i18n="admins.username">Benutzername</label>
                         <input type="text" name="username" required>
 
-                        <label>Anzeigename (Vorname Nachname)</label>
-                        <input type="text" name="displayName" placeholder="z. B. Max Mustermann">
+                        <label data-i18n="admins.displayNameFull">Anzeigename (Vorname Nachname)</label>
+                        <input type="text" name="displayName" placeholder="z. B. Max Mustermann" data-i18n-placeholder="admins.displayNamePlaceholder">
 
-                        <label>Passwort</label>
+                        <label data-i18n="admins.password">Passwort</label>
                         <div class="field-wrap">
                             <input type="password" id="adm_create_pw" name="password" required>
                             <button type="button" class="eye-btn" data-eye="adm_create_pw" onclick="toggleVis('adm_create_pw')">&#128065;</button>
                         </div>
 
-                        <label>Berechtigungen</label>
+                        <label data-i18n="admins.permissions">Berechtigungen</label>
                         <div class="permission-box">
                             ${renderPermissionCheckboxes([])}
                         </div>
 
-                        <button type="submit" style="margin-top:16px;">Admin erstellen</button>
+                        <button type="submit" style="margin-top:16px;" data-i18n="admins.createAdmin">Admin erstellen</button>
                     </form>
                 </div>
                 `
@@ -4868,14 +4981,14 @@ app.get('/admin/admins', requireAdmin, requirePermission('admins.view'), (req, r
         }
 
         <div class="card">
-            <h2>Vorhandene Admins</h2>
+            <h2 data-i18n="admins.existingAdmins">Vorhandene Admins</h2>
             <table>
                 <thead>
                     <tr>
-                        <th>Benutzername</th>
-                        <th>Passwort</th>
-                        <th>Rechte</th>
-                        <th>Aktion</th>
+                        <th data-i18n="admins.username">Benutzername</th>
+                        <th data-i18n="admins.password">Passwort</th>
+                        <th data-i18n="admins.permissions">Rechte</th>
+                        <th data-i18n="common.actions">Aktion</th>
                     </tr>
                 </thead>
                 <tbody>
@@ -4891,24 +5004,24 @@ app.get('/admin/admins', requireAdmin, requirePermission('admins.view'), (req, r
             if (others.length === 0) return '';
             return `
             <div class="card" style="border:2px solid #f59e0b;">
-                <h2 style="color:#92400e;">⚠️ Master übertragen</h2>
-                <p style="font-size:13px;opacity:.7;margin-bottom:16px;">
+                <h2 style="color:#92400e;" data-i18n="admins.transferMaster">⚠️ Master übertragen</h2>
+                <p style="font-size:13px;opacity:.7;margin-bottom:16px;" data-i18n="admins.transferMasterDesc">
                     Überträgt den Master-Status an einen anderen Admin. Du wirst danach ein normaler Admin ohne Master-Rechte.
                     Diese Aktion kann nicht rückgängig gemacht werden.
                 </p>
                 <form method="POST" action="/admin/admins/transfer-master" onsubmit="return confirm('Master-Status wirklich übertragen? Du verlierst danach alle Master-Rechte.')">
                     ${csrfField(req)}
-                    <label>Neuer Master</label>
+                    <label data-i18n="admins.newMaster">Neuer Master</label>
                     <select name="targetUsername" required>
-                        <option value="">– Admin auswählen –</option>
+                        <option value="" data-i18n="admins.selectAdmin">– Admin auswählen –</option>
                         ${others.map(a => `<option value="${escapeHtml(a.username)}">${escapeHtml(a.displayName || a.username)} (@${escapeHtml(a.username)})</option>`).join('')}
                     </select>
-                    <label>Dein Passwort zur Bestätigung</label>
+                    <label data-i18n="admins.passwordConfirm">Dein Passwort zur Bestätigung</label>
                     <div class="field-wrap">
                         <input type="password" id="transfer_pw" name="password" required autocomplete="off">
                         <button type="button" class="eye-btn" data-eye="transfer_pw" onclick="toggleVis('transfer_pw')">&#128065;</button>
                     </div>
-                    <button type="submit" style="background:#f59e0b;color:#000;">Master übertragen</button>
+                    <button type="submit" style="background:#f59e0b;color:#000;" data-i18n="admins.transferMasterBtn">Master übertragen</button>
                 </form>
             </div>`;
         })()}
@@ -4920,7 +5033,8 @@ app.get('/admin/admins', requireAdmin, requirePermission('admins.view'), (req, r
 app.post('/admin/admins/transfer-master', requireAdmin, requireCsrf, async (req, res) => {
     try {
         const me = getCurrentAdmin(req);
-        if (!me || !me.master) return res.status(403).send('Nur der Master kann den Master-Status übertragen.');
+        const L = loadLocale();
+        if (!me || !me.master) return res.status(403).send(L.errors?.masterTransferUnauthorized);
 
         const targetUsername = String(req.body.targetUsername || '').trim();
         const password = String(req.body.password || '');
@@ -4942,7 +5056,8 @@ app.post('/admin/admins/transfer-master', requireAdmin, requireCsrf, async (req,
         return res.redirect('/admin/admins');
     } catch (err) {
         console.error(err);
-        return res.status(500).send('Fehler beim Übertragen');
+        const L = loadLocale();
+        return res.status(500).send(L.errors?.masterTransferFailed);
     }
 });
 
@@ -4951,6 +5066,7 @@ app.post('/admin/admins/create', requireAdmin, requirePermission('admins.create'
         const username = String(req.body.username || '').trim();
         const displayName = String(req.body.displayName || '').trim();
         const password = String(req.body.password || '');
+        const L = loadLocale();
 
         let permissions = req.body.permissions || [];
         if (!Array.isArray(permissions)) {
@@ -4960,22 +5076,22 @@ app.post('/admin/admins/create', requireAdmin, requirePermission('admins.create'
         permissions = permissions.filter(p => AVAILABLE_PERMISSIONS.includes(p));
 
         if (!username || !password) {
-            return res.status(400).send('Fehlende Daten');
+            return res.status(400).send(L.errors?.missingData);
         }
 
         if (username.length > 64 || displayName.length > 128) {
-            return res.status(400).send('Eingabe zu lang');
+            return res.status(400).send(L.errors?.inputTooLong);
         }
 
         const pwErr2 = validatePasswordStrength(password);
         if (pwErr2) return res.status(400).send(pwErr2);
 
         if (password.length > 256) {
-            return res.status(400).send('Passwort zu lang');
+            return res.status(400).send(L.errors?.passwordTooLong);
         }
 
         if (getAdminUser(username)) {
-            return res.status(400).send('Admin existiert bereits');
+            return res.status(400).send(L.errors?.adminAlreadyExists);
         }
 
         const passwordHash = await bcrypt.hash(password, BCRYPT_ROUNDS);
@@ -4992,25 +5108,27 @@ app.post('/admin/admins/create', requireAdmin, requirePermission('admins.create'
         return res.redirect('/admin/admins');
     } catch (err) {
         console.error(err);
-        return res.status(500).send('Admin konnte nicht erstellt werden');
+        const L = loadLocale();
+        return res.status(500).send(L.errors?.adminCreateFailed);
     }
 });
 
 app.get('/admin/admins/edit/:username', requireAdmin, requirePermission('admins.edit'), (req, res) => {
     const username = String(req.params.username || '').trim();
     const admin = getAdminUser(username);
+    const L = loadLocale();
 
     if (!admin) {
-        return res.status(404).send('Admin nicht gefunden');
+        return res.status(404).send(L.errors?.adminNotFound);
     }
 
     if (admin.master) {
-        return res.status(400).send('Master-Admin kann nicht bearbeitet werden');
+        return res.status(400).send(L.errors?.masterCannotBeEdited);
     }
 
     const content = `
         <div class="topbar">
-            <h1 class="page-title">Admin bearbeiten</h1>
+            <h1 class="page-title" data-i18n="admins.editAdmin">Admin bearbeiten</h1>
         </div>
 
         <div class="card">
@@ -5019,39 +5137,40 @@ app.get('/admin/admins/edit/:username', requireAdmin, requirePermission('admins.
                 ${csrfField(req)}
                 <input type="hidden" name="username" value="${escapeHtml(admin.username)}">
 
-                <label>Anzeigename (Vorname Nachname)</label>
-                <input type="text" name="displayName" value="${escapeHtml(admin.displayName || '')}" placeholder="z. B. Max Mustermann">
+                <label data-i18n="admins.displayNameFull">Anzeigename (Vorname Nachname)</label>
+                <input type="text" name="displayName" value="${escapeHtml(admin.displayName || '')}" placeholder="z. B. Max Mustermann" data-i18n-placeholder="admins.displayNamePlaceholder">
 
-                <label>Neues Passwort</label>
+                <label data-i18n="admins.newPassword">Neues Passwort</label>
                 <div class="field-wrap">
-                    <input type="password" id="adm_edit_pw" name="password" placeholder="Leer lassen = unverändert">
+                    <input type="password" id="adm_edit_pw" name="password" placeholder="Leer lassen = unverändert" data-i18n-placeholder="admins.passwordKeepPlaceholder">
                     <button type="button" class="eye-btn" data-eye="adm_edit_pw" onclick="toggleVis('adm_edit_pw')">&#128065;</button>
                 </div>
 
-                <label>Berechtigungen</label>
+                <label data-i18n="admins.permissions">Berechtigungen</label>
                 <div class="permission-box">
                     ${renderPermissionCheckboxes(admin.permissions)}
                 </div>
 
-                <button type="submit" style="margin-top:16px;">Änderungen speichern</button>
+                <button type="submit" style="margin-top:16px;" data-i18n="admins.saveChanges">Änderungen speichern</button>
             </form>
         </div>
     `;
 
-    res.send(renderAdminLayout(req, 'Admin bearbeiten', content));
+    res.send(renderAdminLayout(req, L.admins.editAdmin, content));
 });
 
 app.post('/admin/admins/edit', requireAdmin, requirePermission('admins.edit'), requireCsrf, async (req, res) => {
     try {
         const username = String(req.body.username || '').trim();
         const admin = getAdminUser(username);
+        const L = loadLocale();
 
         if (!admin) {
-            return res.status(404).send('Admin nicht gefunden');
+            return res.status(404).send(L.errors?.adminNotFound);
         }
 
         if (admin.master) {
-            return res.status(400).send('Master-Admin kann nicht bearbeitet werden');
+            return res.status(400).send(L.errors?.masterCannotBeEdited);
         }
 
         const password = String(req.body.password || '');
@@ -5068,14 +5187,14 @@ app.post('/admin/admins/edit', requireAdmin, requirePermission('admins.edit'), r
         admin.displayName = displayName;
 
         if (displayName.length > 128) {
-            return res.status(400).send('Anzeigename zu lang');
+            return res.status(400).send(L.errors?.displayNameTooLong);
         }
 
         if (password.trim()) {
             const pwErr3 = validatePasswordStrength(password);
             if (pwErr3) return res.status(400).send(pwErr3);
             if (password.length > 256) {
-                return res.status(400).send('Passwort zu lang');
+                return res.status(400).send(L.errors?.passwordTooLong);
             }
             admin.passwordHash = await bcrypt.hash(password, BCRYPT_ROUNDS);
         }
@@ -5084,7 +5203,8 @@ app.post('/admin/admins/edit', requireAdmin, requirePermission('admins.edit'), r
         return res.redirect('/admin/admins');
     } catch (err) {
         console.error(err);
-        return res.status(500).send('Admin konnte nicht bearbeitet werden');
+        const L = loadLocale();
+        return res.status(500).send(L.errors?.adminEditFailed);
     }
 });
 
@@ -5092,13 +5212,14 @@ app.post('/admin/admins/delete', requireAdmin, requirePermission('admins.delete'
     try {
         const username = String(req.body.username || '').trim();
         const admin = getAdminUser(username);
+        const L = loadLocale();
 
         if (!admin) {
-            return res.status(404).send('Admin nicht gefunden');
+            return res.status(404).send(L.errors?.adminNotFound);
         }
 
         if (admin.master) {
-            return res.status(400).send('Master-Admin kann nicht gelöscht werden');
+            return res.status(400).send(L.errors?.masterCannotBeDeleted);
         }
 
         admins = admins.filter(a => a.username !== username);
@@ -5107,7 +5228,8 @@ app.post('/admin/admins/delete', requireAdmin, requirePermission('admins.delete'
         return res.redirect('/admin/admins');
     } catch (err) {
         console.error(err);
-        return res.status(500).send('Admin konnte nicht gelöscht werden');
+        const L = loadLocale();
+        return res.status(500).send(L.errors?.adminDeleteFailed);
     }
 });
 
@@ -5119,13 +5241,13 @@ MICROSOFT
 app.get('/admin/microsoft', requireAdmin, requirePermission('microsoft.view'), (req, res) => {
     const content = `
         <div class="topbar">
-            <h1 class="page-title">Microsoft Konfiguration</h1>
+            <h1 class="page-title" data-i18n="microsoft.title">Microsoft Konfiguration</h1>
         </div>
 
         ${hasPermission(req, 'microsoft.edit') ? `
         <div class="card">
-            <h2>Microsoft Login</h2>
-            <p style="font-size:14px;color:var(--muted);margin-bottom:16px;line-height:1.5;">
+            <h2 data-i18n="microsoft.loginHeading">Microsoft Login</h2>
+            <p style="font-size:14px;color:var(--muted);margin-bottom:16px;line-height:1.5;" data-i18n="microsoft.loginDesc">
                 Wenn aktiviert, melden sich Mitarbeiter per Microsoft-Konto an.<br>
                 Wenn deaktiviert, geben sie Name und Titel manuell ein.
             </p>
@@ -5137,7 +5259,7 @@ app.get('/admin/microsoft', requireAdmin, requirePermission('microsoft.view'), (
                         <span class="toggle-slider"></span>
                     </label>
                     <span style="font-size:14px;font-weight:600;">
-                        Microsoft Login ist ${isMicrosoftLoginEnabled() ? '<span style="color:var(--primary)">aktiviert</span>' : '<span style="color:var(--muted)">deaktiviert</span>'}
+                        <span data-i18n="microsoft.loginStatus">Microsoft Login ist</span> ${isMicrosoftLoginEnabled() ? '<span style="color:var(--primary)" data-i18n="microsoft.loginActive">aktiviert</span>' : '<span style="color:var(--muted)" data-i18n="microsoft.loginInactive">deaktiviert</span>'}
                     </span>
                 </div>
             </form>
@@ -5145,36 +5267,36 @@ app.get('/admin/microsoft', requireAdmin, requirePermission('microsoft.view'), (
         ` : ''}
 
         <div class="card">
-            <h2>Entra / Azure AD Daten</h2>
+            <h2 data-i18n="microsoft.entraData">Entra / Azure AD Daten</h2>
 
             ${
                 hasPermission(req, 'microsoft.edit')
                     ? `
                     <form method="POST" action="/admin/microsoft/update">
                         ${csrfField(req)}
-                        <label>Client ID</label>
+                        <label data-i18n="microsoft.clientId">Client ID</label>
                         <input type="text" name="clientID" value="${escapeHtml(microsoftConfig.clientID || '')}" required>
 
-                        <label>Tenant ID</label>
+                        <label data-i18n="microsoft.tenantId">Tenant ID</label>
                         <input type="text" name="tenantID" value="${escapeHtml(microsoftConfig.tenantID || '')}" required>
 
-                        <label>Client Secret</label>
+                        <label data-i18n="microsoft.clientSecret">Client Secret</label>
                         <div class="field-wrap">
                             <input type="password" id="ms_secret" name="clientSecret" value="${escapeHtml(microsoftConfig.clientSecret || '')}" required>
                             <button type="button" class="eye-btn" data-eye="ms_secret" onclick="toggleVis('ms_secret')">&#128065;</button>
                         </div>
 
-                        <label>Callback URL</label>
+                        <label data-i18n="microsoft.callbackUrl">Callback URL</label>
                         <input type="text" name="callbackURL" value="${escapeHtml(microsoftConfig.callbackURL || '')}" required>
 
-                        <button type="submit">Microsoft Konfiguration speichern</button>
+                        <button type="submit" data-i18n="microsoft.saveConfig">Microsoft Konfiguration speichern</button>
                     </form>
                     `
                     : `
-                    <p><strong>Client ID:</strong><br>${escapeHtml(microsoftConfig.clientID || '')}</p>
-                    <p><strong>Tenant ID:</strong><br>${escapeHtml(microsoftConfig.tenantID || '')}</p>
-                    <p><strong>Client Secret:</strong><br>********</p>
-                    <p><strong>Callback URL:</strong><br>${escapeHtml(microsoftConfig.callbackURL || '')}</p>
+                    <p><strong data-i18n="microsoft.clientId">Client ID:</strong><br>${escapeHtml(microsoftConfig.clientID || '')}</p>
+                    <p><strong data-i18n="microsoft.tenantId">Tenant ID:</strong><br>${escapeHtml(microsoftConfig.tenantID || '')}</p>
+                    <p><strong data-i18n="microsoft.clientSecret">Client Secret:</strong><br>********</p>
+                    <p><strong data-i18n="microsoft.callbackUrl">Callback URL:</strong><br>${escapeHtml(microsoftConfig.callbackURL || '')}</p>
                     `
             }
         </div>
@@ -5189,9 +5311,10 @@ app.post('/admin/microsoft/update', requireAdmin, requirePermission('microsoft.e
         const tenantID = String(req.body.tenantID || '').trim();
         const clientSecret = String(req.body.clientSecret || '').trim();
         const callbackURL = String(req.body.callbackURL || '').trim();
+        const L = loadLocale();
 
         if (!clientID || !tenantID || !clientSecret || !callbackURL) {
-            return res.status(400).send('Fehlende Daten');
+            return res.status(400).send(L.errors?.missingData);
         }
 
         microsoftConfig = {
@@ -5207,7 +5330,8 @@ app.post('/admin/microsoft/update', requireAdmin, requirePermission('microsoft.e
         return res.redirect('/admin/microsoft');
     } catch (err) {
         console.error(err);
-        return res.status(500).send('Microsoft Konfiguration konnte nicht gespeichert werden');
+        const L = loadLocale();
+        return res.status(500).send(L.errors?.microsoftSaveFailed);
     }
 });
 
@@ -5218,7 +5342,28 @@ app.post('/admin/microsoft/toggle', requireAdmin, requirePermission('microsoft.e
         return res.redirect('/admin/microsoft');
     } catch (err) {
         console.error(err);
-        return res.status(500).send('Einstellung konnte nicht gespeichert werden');
+        const L = loadLocale();
+        return res.status(500).send(L.errors?.settingSaveFailed);
+    }
+});
+
+/*
+==================================================
+LOCALE API (public – no auth required)
+==================================================
+*/
+app.get('/api/locale', (_req, res) => {
+    const lang = String(appConfig.language || 'de').replace(/[^a-z]/gi, '').toLowerCase();
+    const allowed = ['de', 'en'];
+    const safeLang = allowed.includes(lang) ? lang : 'de';
+    const localePath = path.join(__dirname, 'locales', safeLang + '.json');
+    try {
+        const data = fs.readFileSync(localePath, 'utf8');
+        res.setHeader('Content-Type', 'application/json');
+        return res.send(data);
+    } catch (err) {
+        console.error('[i18n] Locale-Datei nicht lesbar:', err.message);
+        return res.status(500).json({ error: loadLocale().errors?.localeUnavailable });
     }
 });
 
@@ -5231,7 +5376,8 @@ app.get('/:room/api/deskview', (req, res) => {
     const room = getRoom(req.params.room);
 
     if (!room) {
-        return res.status(404).json({ error: 'Raum nicht gefunden' });
+        const L = loadLocale();
+        return res.status(404).json({ error: L.errors?.roomNotFound });
     }
 
     return res.json(renderRoomApiJson(room));
@@ -5246,7 +5392,8 @@ app.get('/:room/api/Komvera', (req, res) => {
     const room = getRoom(req.params.room);
 
     if (!room) {
-        return res.status(404).json({ error: 'Raum nicht gefunden' });
+        const L = loadLocale();
+        return res.status(404).json({ error: L.errors?.roomNotFound });
     }
 
     return res.json(renderRoomApiJson(room));
@@ -5258,11 +5405,12 @@ QR / ROOM
 ==================================================
 */
 app.get('/:room', (req, res) => {
+    const L = loadLocale();
     const roomId = req.params.room;
     const room = getRoom(roomId);
 
     if (!room) {
-        return res.status(404).send('Raum nicht gefunden');
+        return res.status(404).send(L.errors?.roomNotFound);
     }
 
     const seatButtons = room.seats.map((seat, index) => {
@@ -5475,7 +5623,7 @@ app.get('/:room', (req, res) => {
                     <a href="/" class="back-link">&#8592; Zur Übersicht</a>
                     <h1>${escapeHtml(room.abteilung)}</h1>
                     <div class="room-num">Raum ${escapeHtml(room.roomnumber)}</div>
-                    <div class="hint">Bitte den Sitzplatz auswählen.</div>
+                    <div class="hint">${L.booking.selectSeat}</div>
 
                     <div class="grid">
                         ${seatButtons}
@@ -5513,11 +5661,13 @@ app.get('/:room/sit/:seat', (req, res) => {
     const room = getRoom(roomId);
 
     if (!room) {
-        return res.status(404).send('Raum nicht gefunden');
+        const L = loadLocale();
+        return res.status(404).send(L.errors?.roomNotFound);
     }
 
     if (!Number.isInteger(seat) || seat < 1 || seat > room.seats.length) {
-        return res.status(400).send('Ungültiger Platz');
+        const L = loadLocale();
+        return res.status(400).send(L.errors?.invalidSeat);
     }
 
     req.session.pendingRoom = roomId;
@@ -5526,7 +5676,8 @@ app.get('/:room/sit/:seat', (req, res) => {
     req.session.save((err) => {
         if (err) {
             console.error('Session save error:', err);
-            return res.status(500).send('Session konnte nicht gespeichert werden.');
+            const L = loadLocale();
+            return res.status(500).send(L.errors?.sessionSaveFailed);
         }
 
         const logoExists = fs.existsSync(LOGO_FILE);
@@ -5777,23 +5928,24 @@ MANUELLES EINCHECKEN
 ==================================================
 */
 app.post('/:room/sit/:seat', requireCsrf, (req, res) => {
+    const L = loadLocale();
     if (isMicrosoftLoginEnabled()) {
-        return res.status(400).send('Manuelles Einchecken ist deaktiviert.');
+        return res.status(400).send(L.errors?.manualCheckinDisabled);
     }
 
     const roomId = req.params.room;
     const seat = Number.parseInt(req.params.seat, 10);
     const room = getRoom(roomId);
 
-    if (!room) return res.status(404).send('Raum nicht gefunden');
-    if (!Number.isInteger(seat) || seat < 1 || seat > room.seats.length) return res.status(400).send('Ungültiger Platz');
+    if (!room) return res.status(404).send(L.errors?.roomNotFound);
+    if (!Number.isInteger(seat) || seat < 1 || seat > room.seats.length) return res.status(400).send(L.errors?.invalidSeat);
 
     const name = String(req.body.name || '').trim();
     const title = String(req.body.title || '').trim();
 
-    if (!name) return res.status(400).send('Name ist erforderlich');
-    if (name.length > 128) return res.status(400).send('Name zu lang');
-    if (title.length > 128) return res.status(400).send('Jobtitel zu lang');
+    if (!name) return res.status(400).send(L.errors?.nameRequired);
+    if (name.length > 128) return res.status(400).send(L.errors?.nameTooLong);
+    if (title.length > 128) return res.status(400).send(L.errors?.jobTitleTooLong);
 
     room.seats[seat - 1] = { name, title: title || 'Mitarbeiter', since: Date.now() };
     saveRooms();
@@ -5841,8 +5993,9 @@ MICROSOFT LOGIN – MSAL (ersetzt passport-azure-ad)
 ==================================================
 */
 app.get('/auth/login', (req, res) => {
+    const L = loadLocale();
     if (!hasMicrosoftConfig()) {
-        return res.status(500).send('Microsoft / Entra ist noch nicht konfiguriert.');
+        return res.status(500).send(L.errors?.microsoftNotConfigured);
     }
 
     if (!msalClient) {
@@ -5850,7 +6003,7 @@ app.get('/auth/login', (req, res) => {
     }
 
     if (!msalClient) {
-        return res.status(500).send('MSAL-Client konnte nicht initialisiert werden.');
+        return res.status(500).send(L.errors?.msalInitFailed);
     }
 
     const authCodeUrlParameters = {
@@ -5866,7 +6019,8 @@ app.get('/auth/login', (req, res) => {
         })
         .catch((err) => {
             console.error('MSAL getAuthCodeUrl Fehler:', err);
-            res.status(500).send('Microsoft Login konnte nicht gestartet werden.');
+            const L = loadLocale();
+            res.status(500).send(L.errors?.microsoftLoginFailed);
         });
 });
 
@@ -5880,7 +6034,8 @@ app.get('/auth/callback', async (req, res) => {
     }
 
     if (!msalClient) {
-        return res.redirect('/auth/error?msg=' + encodeURIComponent('MSAL-Client nicht verfügbar.'));
+        const L = loadLocale();
+        return res.redirect('/auth/error?msg=' + encodeURIComponent(L.errors?.msalInitFailed));
     }
 
     const code = req.query.code;
@@ -5982,13 +6137,14 @@ app.get('/auth/callback', async (req, res) => {
 });
 
 app.get('/auth/error', (req, res) => {
-    const msg = req.query.msg ? String(req.query.msg) : 'Unbekannter Fehler';
+    const L = loadLocale();
+    const msg = req.query.msg ? String(req.query.msg) : (L.common?.error);
 
     res.status(500).send(`
-        <html lang="de">
+        <html lang="${escapeHtml(appConfig.language || 'de')}">
         <head>
             <meta charset="UTF-8">
-            <title>Login Fehler</title>
+            <title>${escapeHtml(L.errors?.loginErrorTitle)}</title>
             <style>
                 body {
                     font-family: Arial, sans-serif;
@@ -6013,7 +6169,7 @@ app.get('/auth/error', (req, res) => {
             </style>
         </head>
         <body>
-            <h2>Microsoft Login fehlgeschlagen</h2>
+            <h2>${escapeHtml(L.errors?.loginErrorTitle)}</h2>
             <p>${escapeHtml(msg)}</p>
             ${renderSupportFooter()}
         </body>
@@ -6028,11 +6184,12 @@ FEHLER
 */
 app.use((err, req, res, next) => {
     console.error('Fehler:', err);
+    const L = loadLocale();
     res.status(500).send(`
-        <html lang="de">
+        <html lang="${escapeHtml(appConfig.language || 'de')}">
         <head>
             <meta charset="UTF-8">
-            <title>Serverfehler</title>
+            <title>${escapeHtml(L.errors?.serverError)}</title>
             <style>
                 body {
                     font-family: Arial, sans-serif;
@@ -6057,8 +6214,8 @@ app.use((err, req, res, next) => {
             </style>
         </head>
         <body>
-            <h2>Interner Serverfehler</h2>
-            <p>Ein unerwarteter Fehler ist aufgetreten. Bitte versuche es erneut.</p>
+            <h2>${escapeHtml(L.errors?.serverError)}</h2>
+            <p>${escapeHtml(L.errors?.serverErrorDesc)}</p>
             ${renderSupportFooter()}
         </body>
         </html>
@@ -6081,8 +6238,8 @@ setInterval(() => {
 app.get('/admin/ssh', requireAdmin, requirePermission('server.ssh'), (req, res) => {
     const content = `
         <div class="topbar">
-            <h1 class="page-title">SSH-Konsole</h1>
-            <button onclick="sshDisconnect()" id="ssh-disconnect-btn" class="btn-danger" style="display:none;padding:6px 14px;font-size:13px;">Trennen</button>
+            <h1 class="page-title" data-i18n="ssh.title">SSH-Konsole</h1>
+            <button onclick="sshDisconnect()" id="ssh-disconnect-btn" class="btn-danger" style="display:none;padding:6px 14px;font-size:13px;" data-i18n="ssh.disconnect">Trennen</button>
         </div>
         <div class="card" style="padding:0;overflow:hidden;">
             <div style="background:#0f0f0f;border-radius:10px;padding:8px;">
@@ -6245,6 +6402,7 @@ START
     try {
         ensureSingleMasterAdmin();
         ensurePublicDir();
+        applyDefaultLang();
         refreshMsalClient();
 
         setInterval(runSeatAutoClear, 60 * 1000);

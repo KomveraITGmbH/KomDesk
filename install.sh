@@ -23,6 +23,7 @@ exec < /dev/tty
 read -r -p "Auswahl / Select [1/2]: " LANG_CHOICE
 
 if [[ "$LANG_CHOICE" == "2" ]]; then
+    LANG_CODE="en"
     # ── English strings ──
     MSG_CHECK_SYS="==> Checking system..."
     MSG_DETECTED="Detected system"
@@ -69,6 +70,7 @@ if [[ "$LANG_CHOICE" == "2" ]]; then
     MSG_UPDATE_CMD="Update:"
     MSG_LOGS_CMD="Logs:"
 else
+    LANG_CODE="de"
     # ── Deutsche strings ──
     MSG_CHECK_SYS="==> Prüfe System..."
     MSG_DETECTED="Erkanntes System"
@@ -311,6 +313,7 @@ Restart=always
 RestartSec=5
 User=${USER}
 Environment=NODE_ENV=production
+Environment=DEFAULT_LANG=${LANG_CODE}
 
 [Install]
 WantedBy=multi-user.target
