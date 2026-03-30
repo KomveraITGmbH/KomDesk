@@ -3571,7 +3571,7 @@ app.post('/admin/save-sleep-schedule', requireAdmin, requirePermission('rooms.ed
         // Refresh-Rate → Millisekunden (TRMNL erwartet ms)
         const val  = parseInt(room.trmnlRefreshValue) || 15;
         const unit = room.trmnlRefreshUnit || 'minutes';
-        const refreshMs = unit === 'hours' ? val * 3600000 : val * 60000;
+        const refreshMs = unit === 'hours' ? val * 3600 : val * 60; // Sekunden
 
         const patchRes = await fetch(`https://usetrmnl.com/api/devices/${device.id}`, {
             method: 'PATCH',
@@ -3589,7 +3589,7 @@ app.post('/admin/save-sleep-schedule', requireAdmin, requirePermission('rooms.ed
         const text = await patchRes.text();
         let body;
         try { body = JSON.parse(text); } catch(e) { body = text; }
-        return res.json({ status: patchRes.status, body, device_id: device.id, sleep_start: sleepStart, sleep_end: sleepEnd, refresh_rate_ms: refreshMs });
+        return res.json({ status: patchRes.status, body, device_id: device.id, sleep_start: sleepStart, sleep_end: sleepEnd, refresh_rate_s: refreshMs });
     } catch (err) {
         return res.json({ error: err.message });
     }
