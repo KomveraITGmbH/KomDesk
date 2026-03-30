@@ -704,27 +704,37 @@ function renderPermissionCheckboxes(selectedPermissions = []) {
 
 function formatAdminPermissions(admin) {
     if (admin.master) {
-        return '<span class="badge badge-master">Alle Rechte</span>';
+        return '<span class="badge badge-master">MASTER</span>';
     }
 
-    const granted = PERMISSION_GROUPS.map(group => {
-        const matches = group.permissions.filter(permission =>
-            admin.permissions.includes(permission.key)
-        );
+    const perms = admin.permissions || [];
+    const allPerms = AVAILABLE_PERMISSIONS;
 
-        if (matches.length === 0) {
-            return '';
-        }
+    if (perms.length === allPerms.length && allPerms.every(p => perms.includes(p))) {
+        return '<span class="badge">✓ Alle Berechtigungen</span>';
+    }
 
+    if (perms.length === 0) {
+        return '<span class="muted">Keine Rechte</span>';
+    }
+
+    const groups = PERMISSION_GROUPS.map(group => {
+        const matches = group.permissions.filter(p => perms.includes(p.key));
+        if (matches.length === 0) return '';
         return `
-            <div style="margin-bottom:10px;">
-                <div style="font-weight:700;margin-bottom:4px;">${escapeHtml(group.title)}</div>
-                ${matches.map(item => `<div class="muted">• ${escapeHtml(item.label)}</div>`).join('')}
+        <div style="border:1px solid var(--border);border-radius:6px;overflow:hidden;margin-bottom:6px;">
+            <div onclick="this.nextElementSibling.style.display=this.nextElementSibling.style.display==='none'?'block':'none';this.querySelector('.pg-arrow').style.transform=this.nextElementSibling.style.display==='block'?'rotate(90deg)':''"
+                style="display:flex;justify-content:space-between;align-items:center;padding:7px 12px;cursor:pointer;font-size:13px;font-weight:600;user-select:none;">
+                <span><span class="pg-arrow" style="font-size:11px;opacity:.5;margin-right:6px;display:inline-block;transition:transform .15s;">▶</span>${escapeHtml(group.title)}</span>
+                <span style="font-size:11px;opacity:.5;">${matches.length}/${group.permissions.length}</span>
             </div>
-        `;
+            <div style="display:none;padding:6px 12px 10px 12px;border-top:1px solid var(--border);">
+                ${matches.map(p => `<div style="font-size:12px;padding:2px 0;opacity:.7;">• ${escapeHtml(p.label)}</div>`).join('')}
+            </div>
+        </div>`;
     }).filter(Boolean).join('');
 
-    return granted || '<span class="muted">Keine Rechte</span>';
+    return groups;
 }
 
 function renderSidebar(req) {
@@ -2950,11 +2960,155 @@ ADMIN DASHBOARD
 ==================================================
 */
 app.get('/admin', requireAdmin, requirePermission('dashboard.view'), (req, res) => {
-    const occupiedSeats = Object.values(rooms).reduce((sum, room) => {
-        return sum + room.seats.filter(s => s.name && s.name !== 'Frei').length;
-    }, 0);
-
     const currentAdmin = getCurrentAdmin(req);
+    const roomList = Object.values(rooms);
+    const totalSeats    = roomList.reduce((s, r) => s + r.seats.length, 0);
+    const occupiedSeats = roomList.reduce((s, r) => s + r.seats.filter(seat => seat.name && seat.name !== 'Frei').length, 0);
+    const freeSeats     = totalSeats - occupiedSeats;
+
+    // --- Widget Definitionen (server-side rendered HTML) ---
+    const widgets = [
+        {
+            id: 'stats',
+            title: 'Statistiken',
+            always: true,
+            html: `
+            <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:12px;">
+                <div style="text-align:center;padding:16px;border:1px solid var(--border);border-radius:8px;">
+                    <div style="font-size:32px;font-weight:700;">${roomList.length}</div>
+                    <div style="opacity:.6;font-size:13px;margin-top:4px;">Räume</div>
+                </div>
+                <div style="text-align:center;padding:16px;border:1px solid var(--border);border-radius:8px;">
+                    <div style="font-size:32px;font-weight:700;color:#dc2626;">${occupiedSeats}</div>
+                    <div style="opacity:.6;font-size:13px;margin-top:4px;">Belegt</div>
+                </div>
+                <div style="text-align:center;padding:16px;border:1px solid var(--border);border-radius:8px;">
+                    <div style="font-size:32px;font-weight:700;color:#059669;">${freeSeats}</div>
+                    <div style="opacity:.6;font-size:13px;margin-top:4px;">Frei</div>
+                </div>
+            </div>
+            <div style="margin-top:12px;background:var(--border);border-radius:999px;height:8px;overflow:hidden;">
+                <div style="height:100%;width:${totalSeats ? Math.round(occupiedSeats/totalSeats*100) : 0}%;background:#dc2626;border-radius:999px;transition:width .4s;"></div>
+            </div>
+            <div style="text-align:center;font-size:12px;opacity:.5;margin-top:4px;">${totalSeats ? Math.round(occupiedSeats/totalSeats*100) : 0}% Auslastung</div>`
+        },
+        {
+            id: 'room_occupancy',
+            title: 'Raumauslastung',
+            html: roomList.length === 0 ? '<p style="opacity:.5;">Keine Räume vorhanden.</p>' :
+                roomList.map(r => {
+                    const total = r.seats.length;
+                    const occ   = r.seats.filter(s => s.name && s.name !== 'Frei').length;
+                    const pct   = total ? Math.round(occ/total*100) : 0;
+                    const color = pct === 100 ? '#dc2626' : pct > 50 ? '#f59e0b' : '#059669';
+                    return `
+                    <div style="margin-bottom:12px;">
+                        <div style="display:flex;justify-content:space-between;font-size:13px;margin-bottom:4px;">
+                            <span><strong>${escapeHtml(r.abteilung)}</strong> <span style="opacity:.5;">${escapeHtml(r.roomnumber)}</span></span>
+                            <span style="color:${color};">${occ}/${total}</span>
+                        </div>
+                        <div style="background:var(--border);border-radius:999px;height:6px;overflow:hidden;">
+                            <div style="height:100%;width:${pct}%;background:${color};border-radius:999px;"></div>
+                        </div>
+                    </div>`;
+                }).join('')
+        },
+        {
+            id: 'occupied_seats',
+            title: 'Belegte Plätze',
+            html: (() => {
+                const occ = [];
+                roomList.forEach(r => r.seats.forEach(s => {
+                    if (s.name && s.name !== 'Frei') occ.push({ room: r.abteilung, roomnr: r.roomnumber, name: s.name, title: s.title });
+                }));
+                if (occ.length === 0) return '<p style="opacity:.5;">Aktuell keine belegten Plätze.</p>';
+                return `<div style="display:flex;flex-direction:column;gap:8px;">${occ.map(o => `
+                    <div style="display:flex;justify-content:space-between;align-items:center;padding:8px 10px;border:1px solid var(--border);border-radius:6px;font-size:13px;">
+                        <div><strong>${escapeHtml(o.name)}</strong>${o.title ? `<span style="opacity:.6;margin-left:6px;">${escapeHtml(o.title)}</span>` : ''}</div>
+                        <div style="opacity:.5;">${escapeHtml(o.room)} · ${escapeHtml(o.roomnr)}</div>
+                    </div>`).join('')}</div>`;
+            })()
+        },
+        {
+            id: 'terminals',
+            title: 'Terminals',
+            html: (() => {
+                const tList = Object.values(terminals);
+                if (tList.length === 0) return '<p style="opacity:.5;">Keine Terminals konfiguriert. <a href="/admin/terminals">Terminal anlegen →</a></p>';
+                return `<div style="display:flex;flex-direction:column;gap:8px;">${tList.map(t => {
+                    const assigned = roomList.find(r => r.terminalId === t.id);
+                    const modeLabel = { none: '–', polling: 'Polling', webhook: 'Webhook' }[t.trmnlMode||'none'];
+                    const modeColor = t.trmnlMode === 'webhook' ? '#059669' : t.trmnlMode === 'polling' ? '#6366f1' : '#6b7280';
+                    return `
+                    <div style="display:flex;justify-content:space-between;align-items:center;padding:8px 10px;border:1px solid var(--border);border-radius:6px;font-size:13px;">
+                        <div>
+                            <strong>${escapeHtml(t.name)}</strong>
+                            ${assigned ? `<span style="opacity:.6;margin-left:6px;">→ ${escapeHtml(assigned.abteilung)}</span>` : '<span style="opacity:.4;margin-left:6px;">nicht zugewiesen</span>'}
+                        </div>
+                        <span style="font-size:11px;padding:2px 8px;border-radius:999px;background:${modeColor}20;color:${modeColor};font-weight:600;">${modeLabel}</span>
+                    </div>`;
+                }).join('')}</div>`;
+            })()
+        },
+        {
+            id: 'microsoft',
+            title: 'Microsoft / Entra ID',
+            html: (() => {
+                const cfg = microsoftConfig;
+                const enabled = appConfig.microsoftLoginEnabled;
+                const configured = !!(cfg.clientID && cfg.tenantID && cfg.clientSecret && cfg.callbackURL);
+                return `
+                <div style="display:flex;flex-direction:column;gap:8px;font-size:13px;">
+                    <div style="display:flex;justify-content:space-between;padding:8px 10px;border:1px solid var(--border);border-radius:6px;">
+                        <span>Login aktiviert</span>
+                        <span style="font-weight:600;color:${enabled ? '#059669' : '#6b7280'};">${enabled ? '✅ Ja' : '❌ Nein'}</span>
+                    </div>
+                    <div style="display:flex;justify-content:space-between;padding:8px 10px;border:1px solid var(--border);border-radius:6px;">
+                        <span>Konfiguriert</span>
+                        <span style="font-weight:600;color:${configured ? '#059669' : '#f59e0b'};">${configured ? '✅ Vollständig' : '⚠️ Unvollständig'}</span>
+                    </div>
+                    ${cfg.tenantID ? `<div style="padding:8px 10px;border:1px solid var(--border);border-radius:6px;opacity:.6;">Tenant: ${escapeHtml(cfg.tenantID)}</div>` : ''}
+                </div>`;
+            })()
+        },
+        {
+            id: 'quick_actions',
+            title: 'Schnellaktionen',
+            html: `
+            <div style="display:flex;flex-wrap:wrap;gap:8px;">
+                ${hasPermission(req, 'rooms.create') ? `<a href="/admin/rooms" class="small-link" style="padding:8px 14px;border:1px solid var(--border);border-radius:6px;text-decoration:none;font-size:13px;">+ Raum</a>` : ''}
+                ${hasPermission(req, 'terminals.create') ? `<a href="/admin/terminals" class="small-link" style="padding:8px 14px;border:1px solid var(--border);border-radius:6px;text-decoration:none;font-size:13px;">+ Terminal</a>` : ''}
+                ${hasPermission(req, 'admins.create') ? `<a href="/admin/admins" class="small-link" style="padding:8px 14px;border:1px solid var(--border);border-radius:6px;text-decoration:none;font-size:13px;">+ Admin</a>` : ''}
+                ${hasPermission(req, 'links.view') ? `<a href="/admin/links" class="small-link" style="padding:8px 14px;border:1px solid var(--border);border-radius:6px;text-decoration:none;font-size:13px;">🔗 Raumlinks</a>` : ''}
+            </div>`
+        },
+        {
+            id: 'my_permissions',
+            title: 'Meine Rechte',
+            html: formatAdminPermissions(currentAdmin)
+        },
+        {
+            id: 'admins_list',
+            title: 'Admins',
+            html: (() => {
+                if (!hasPermission(req, 'admins.view')) return '<p style="opacity:.5;">Keine Berechtigung.</p>';
+                return `<div style="display:flex;flex-direction:column;gap:6px;">${admins.map(a => `
+                    <div style="display:flex;justify-content:space-between;align-items:center;padding:7px 10px;border:1px solid var(--border);border-radius:6px;font-size:13px;">
+                        <span>${escapeHtml(a.displayName || a.username)}${a.master ? ' <span class="badge badge-master" style="font-size:10px;">MASTER</span>' : ''}</span>
+                        <span style="opacity:.4;">${a.microsoft ? 'Microsoft' : 'Lokal'}</span>
+                    </div>`).join('')}</div>`;
+            })()
+        }
+    ];
+
+    const widgetHtml = widgets.map(w => `
+        <div class="card widget-card" data-widget="${w.id}" ${w.always ? 'data-always="1"' : ''}>
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;">
+                <h2 style="margin:0;font-size:15px;">${w.title}</h2>
+                ${!w.always ? `<button type="button" onclick="hideWidget('${w.id}')" style="background:none;border:none;cursor:pointer;opacity:.4;font-size:16px;padding:0;" title="Widget ausblenden">✕</button>` : ''}
+            </div>
+            ${w.html}
+        </div>`).join('');
 
     const content = `
         <div class="topbar">
@@ -2965,36 +3119,84 @@ app.get('/admin', requireAdmin, requirePermission('dashboard.view'), (req, res) 
                     ${currentAdmin?.master ? '<span class="badge badge-master">MASTER</span>' : ''}
                 </div>
             </div>
+            <button type="button" onclick="openWidgetSettings()" style="display:flex;align-items:center;gap:6px;font-size:13px;">⚙️ Dashboard anpassen</button>
         </div>
 
-        <div class="grid-3">
-            <div class="card">
-                <div class="muted">Räume</div>
-                <div class="stat">${Object.keys(rooms).length}</div>
-            </div>
-            <div class="card">
-                <div class="muted">Admins</div>
-                <div class="stat">${admins.length}</div>
-            </div>
-            <div class="card">
-                <div class="muted">Belegte Plätze</div>
-                <div class="stat">${occupiedSeats}</div>
-            </div>
+        <div id="widgetGrid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(340px,1fr));gap:16px;align-items:start;">
+            ${widgetHtml}
         </div>
 
-        <div class="grid-2">
-            <div class="card">
-                <h2>Microsoft Konfiguration</h2>
-                <p><strong>Client ID:</strong><br>${escapeHtml(microsoftConfig.clientID || '')}</p>
-                <p><strong>Tenant ID:</strong><br>${escapeHtml(microsoftConfig.tenantID || '')}</p>
-                <p><strong>Callback URL:</strong><br>${escapeHtml(microsoftConfig.callbackURL || '')}</p>
+        <!-- Widget Settings Panel -->
+        <div id="widgetOverlay" onclick="closeWidgetSettings()" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.4);z-index:100;"></div>
+        <div id="widgetPanel" style="display:none;position:fixed;top:0;right:0;width:300px;height:100%;background:var(--card);border-left:1px solid var(--border);z-index:101;padding:24px;overflow-y:auto;box-shadow:-4px 0 20px rgba(0,0,0,.15);">
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:20px;">
+                <h2 style="margin:0;font-size:16px;">Dashboard anpassen</h2>
+                <button type="button" onclick="closeWidgetSettings()" style="background:none;border:none;cursor:pointer;font-size:20px;opacity:.6;">✕</button>
             </div>
-
-            <div class="card">
-                <h2>Deine Rechte</h2>
-                ${formatAdminPermissions(currentAdmin)}
-            </div>
+            <p style="font-size:13px;opacity:.6;margin-bottom:16px;">Wähle welche Widgets angezeigt werden sollen.</p>
+            <div id="widgetToggles" style="display:flex;flex-direction:column;gap:10px;"></div>
+            <button type="button" onclick="resetWidgets()" style="margin-top:20px;width:100%;background:var(--border);color:var(--text);">Zurücksetzen</button>
         </div>
+
+        <script>
+        var WIDGET_IDS = ${JSON.stringify(widgets.filter(w => !w.always).map(w => ({ id: w.id, title: w.title })))};
+        var STORAGE_KEY = 'deskview-hidden-widgets';
+
+        function getHidden() { try { return JSON.parse(localStorage.getItem(STORAGE_KEY) || '[]'); } catch(e) { return []; } }
+        function setHidden(arr) { localStorage.setItem(STORAGE_KEY, JSON.stringify(arr)); }
+
+        function applyWidgets() {
+            var hidden = getHidden();
+            document.querySelectorAll('.widget-card').forEach(function(el) {
+                var id = el.getAttribute('data-widget');
+                var always = el.getAttribute('data-always');
+                if (always) return;
+                el.style.display = hidden.includes(id) ? 'none' : '';
+            });
+            buildToggles();
+        }
+
+        function hideWidget(id) {
+            var hidden = getHidden();
+            if (!hidden.includes(id)) hidden.push(id);
+            setHidden(hidden);
+            applyWidgets();
+        }
+
+        function buildToggles() {
+            var hidden = getHidden();
+            var container = document.getElementById('widgetToggles');
+            if (!container) return;
+            container.innerHTML = WIDGET_IDS.map(function(w) {
+                var isVisible = !hidden.includes(w.id);
+                return '<label style="display:flex;align-items:center;gap:10px;cursor:pointer;font-size:14px;padding:8px 10px;border:1px solid var(--border);border-radius:6px;">' +
+                    '<input type="checkbox" ' + (isVisible ? 'checked' : '') + ' onchange="toggleWidget(\'' + w.id + '\',this.checked)" style="width:16px;height:16px;">' +
+                    w.title + '</label>';
+            }).join('');
+        }
+
+        function toggleWidget(id, show) {
+            var hidden = getHidden();
+            if (show) { hidden = hidden.filter(function(h) { return h !== id; }); }
+            else { if (!hidden.includes(id)) hidden.push(id); }
+            setHidden(hidden);
+            applyWidgets();
+        }
+
+        function resetWidgets() { setHidden([]); applyWidgets(); }
+
+        function openWidgetSettings() {
+            buildToggles();
+            document.getElementById('widgetOverlay').style.display = 'block';
+            document.getElementById('widgetPanel').style.display = 'block';
+        }
+        function closeWidgetSettings() {
+            document.getElementById('widgetOverlay').style.display = 'none';
+            document.getElementById('widgetPanel').style.display = 'none';
+        }
+
+        document.addEventListener('DOMContentLoaded', applyWidgets);
+        </script>
     `;
 
     res.send(renderAdminLayout(req, 'Dashboard', content));
@@ -3642,13 +3844,21 @@ app.get('/admin/terminals', requireAdmin, requirePermission('terminals.view'), (
             ? 'Zugewiesen: ' + assignedRooms.map(r => escapeHtml(r.abteilung)).join(', ')
             : 'Keinem Raum zugewiesen';
 
+        const modeColor = t.trmnlMode === 'webhook' ? '#059669' : t.trmnlMode === 'polling' ? '#6366f1' : '#6b7280';
+
         return `
-        <div class="card" style="margin-bottom:20px;">
-            <div class="topbar">
-                <h2 style="margin:0;font-size:18px;">${escapeHtml(t.name)}</h2>
-                <span class="badge">${escapeHtml(t.trmnlMode || 'none')}</span>
+        <div class="card" style="margin-bottom:12px;padding:0;overflow:hidden;">
+            <div onclick="toggleTerminal('${escapeHtml(t.id)}')" style="display:flex;justify-content:space-between;align-items:center;padding:14px 18px;cursor:pointer;user-select:none;">
+                <div style="display:flex;align-items:center;gap:12px;">
+                    <span id="termArrow_${escapeHtml(t.id)}" style="font-size:12px;opacity:.5;transition:transform .2s;">▶</span>
+                    <div>
+                        <div style="font-size:15px;font-weight:600;">${escapeHtml(t.name)}</div>
+                        <div style="font-size:12px;opacity:.5;margin-top:2px;">${assignedText}</div>
+                    </div>
+                </div>
+                <span style="font-size:11px;padding:3px 10px;border-radius:999px;background:${modeColor}20;color:${modeColor};font-weight:600;">${escapeHtml(t.trmnlMode || 'none')}</span>
             </div>
-            <p style="font-size:13px;opacity:.6;margin:4px 0 12px 0;">${assignedText}</p>
+            <div id="termBody_${escapeHtml(t.id)}" style="display:none;padding:0 18px 18px 18px;border-top:1px solid var(--border);">
 
             ${hasPermission(req, 'terminals.edit') ? `
             <form method="POST" action="/admin/terminals/update">
@@ -3739,6 +3949,7 @@ app.get('/admin/terminals', requireAdmin, requirePermission('terminals.view'), (
                 <button type="submit" class="btn-danger">Terminal löschen</button>
             </form>
             ` : ''}
+            </div><!-- /termBody -->
         </div>`;
     }).join('');
 
@@ -3758,6 +3969,14 @@ app.get('/admin/terminals', requireAdmin, requirePermission('terminals.view'), (
     ${createForm}
     ${cards || '<div class="card"><p style="opacity:.6;">Noch keine Terminals vorhanden.</p></div>'}
     <script>
+        function toggleTerminal(tid) {
+            var body  = document.getElementById('termBody_' + tid);
+            var arrow = document.getElementById('termArrow_' + tid);
+            if (!body) return;
+            var open = body.style.display === 'none' || body.style.display === '';
+            body.style.display  = open ? 'block' : 'none';
+            if (arrow) arrow.style.transform = open ? 'rotate(90deg)' : '';
+        }
         function trmnlModeChange(tid) {
             var sel = document.getElementById('trmnlMode_' + tid);
             if (!sel) return;
@@ -4075,6 +4294,7 @@ app.get('/admin/admins', requireAdmin, requirePermission('admins.view'), (req, r
         <div class="topbar">
             <h1 class="page-title">Admins verwalten</h1>
         </div>
+        ${req.query.error ? `<div class="notice" style="border-color:#dc2626;color:#dc2626;margin-bottom:16px;">❌ ${escapeHtml(String(req.query.error))}</div>` : ''}
 
         ${
             hasPermission(req, 'admins.create')
@@ -4126,9 +4346,67 @@ app.get('/admin/admins', requireAdmin, requirePermission('admins.view'), (req, r
                 </tbody>
             </table>
         </div>
+
+        ${(() => {
+            const me = getCurrentAdmin(req);
+            if (!me || !me.master) return '';
+            const others = admins.filter(a => !a.master);
+            if (others.length === 0) return '';
+            return `
+            <div class="card" style="border:2px solid #f59e0b;">
+                <h2 style="color:#92400e;">⚠️ Master übertragen</h2>
+                <p style="font-size:13px;opacity:.7;margin-bottom:16px;">
+                    Überträgt den Master-Status an einen anderen Admin. Du wirst danach ein normaler Admin ohne Master-Rechte.
+                    Diese Aktion kann nicht rückgängig gemacht werden.
+                </p>
+                <form method="POST" action="/admin/admins/transfer-master" onsubmit="return confirm('Master-Status wirklich übertragen? Du verlierst danach alle Master-Rechte.')">
+                    ${csrfField(req)}
+                    <label>Neuer Master</label>
+                    <select name="targetUsername" required>
+                        <option value="">– Admin auswählen –</option>
+                        ${others.map(a => `<option value="${escapeHtml(a.username)}">${escapeHtml(a.displayName || a.username)} (@${escapeHtml(a.username)})</option>`).join('')}
+                    </select>
+                    <label>Dein Passwort zur Bestätigung</label>
+                    <div class="field-wrap">
+                        <input type="password" id="transfer_pw" name="password" required autocomplete="off">
+                        <button type="button" class="eye-btn" data-eye="transfer_pw" onclick="toggleVis('transfer_pw')">&#128065;</button>
+                    </div>
+                    <button type="submit" style="background:#f59e0b;color:#000;">Master übertragen</button>
+                </form>
+            </div>`;
+        })()}
     `;
 
     res.send(renderAdminLayout(req, 'Admins', content));
+});
+
+app.post('/admin/admins/transfer-master', requireAdmin, requireCsrf, async (req, res) => {
+    try {
+        const me = getCurrentAdmin(req);
+        if (!me || !me.master) return res.status(403).send('Nur der Master kann den Master-Status übertragen.');
+
+        const targetUsername = String(req.body.targetUsername || '').trim();
+        const password = String(req.body.password || '');
+
+        if (!targetUsername) return res.redirect('/admin/admins?error=Kein+Admin+ausgewählt');
+
+        const passwordMatch = await bcrypt.compare(password, me.passwordHash);
+        if (!passwordMatch) return res.redirect('/admin/admins?error=Falsches+Passwort');
+
+        const target = admins.find(a => a.username === targetUsername);
+        if (!target || target.master) return res.redirect('/admin/admins?error=Admin+nicht+gefunden');
+
+        // Transfer
+        me.master = false;
+        target.master = true;
+        target.permissions = [...AVAILABLE_PERMISSIONS]; // alle Rechte
+
+        saveAdmins();
+        return res.redirect('/admin/admins');
+    } catch (err) {
+        console.error(err);
+        return res.status(500).send('Fehler beim Übertragen');
+    }
 });
 
 app.post('/admin/admins/create', requireAdmin, requirePermission('admins.create'), requireCsrf, async (req, res) => {
