@@ -4035,12 +4035,25 @@ app.get('/admin/srv.js', (_req, res) => {
         '    var overlay = srvShowOverlay("Linux-Server wird neu gestartet\\u2026", [\n' +
         '        { id: "r1", text: "Neustart-Befehl wird gesendet\\u2026" },\n' +
         '        { id: "r2", text: "Server f\\u00e4hrt herunter\\u2026" },\n' +
-        '        { id: "r3", text: "Bitte warte \\u2014 dauert ca. 1\\u20132 Minuten" }\n' +
+        '        { id: "r3", text: "Warte bis Server wieder l\\u00e4uft\\u2026 (ca. 1\\u20132 Min.)" },\n' +
+        '        { id: "r4", text: "Weiterleitung\\u2026" }\n' +
         '    ]);\n' +
         '    fetch("/admin/server/reboot", { method: "POST", headers: { "Content-Type": "application/x-www-form-urlencoded" }, body: "_csrf=" + encodeURIComponent(getCsrf()) })\n' +
         '        .then(function() {\n' +
         '            srvStepDone(overlay, "r1"); srvStepActive(overlay, "r2");\n' +
-        '            setTimeout(function() { srvStepDone(overlay, "r2"); srvStepActive(overlay, "r3"); }, 3000);\n' +
+        '            setTimeout(function() {\n' +
+        '                srvStepDone(overlay, "r2"); srvStepActive(overlay, "r3");\n' +
+        '                var tries = 0;\n' +
+        '                function poll() {\n' +
+        '                    fetch("/admin/server/stats", { cache: "no-store" })\n' +
+        '                        .then(function(r) {\n' +
+        '                            if (r.ok) { srvStepDone(overlay, "r3"); srvStepActive(overlay, "r4"); setTimeout(function() { window.location.href = "/admin"; }, 1000); }\n' +
+        '                            else { if (++tries < 90) setTimeout(poll, 3000); }\n' +
+        '                        })\n' +
+        '                        .catch(function() { if (++tries < 90) setTimeout(poll, 3000); });\n' +
+        '                }\n' +
+        '                poll();\n' +
+        '            }, 20000);\n' +
         '        })\n' +
         '        .catch(function() {\n' +
         '            var box = overlay.querySelector(".srv-overlay-box");\n' +
