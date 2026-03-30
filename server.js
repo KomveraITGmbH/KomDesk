@@ -4623,39 +4623,37 @@ app.get('/auth/callback', async (req, res) => {
         delete req.session.pendingRoom;
         delete req.session.pendingSeat;
 
+        const logoExists = fs.existsSync(LOGO_FILE);
         return res.send(`
+            <!DOCTYPE html>
             <html lang="de">
             <head>
                 <meta charset="UTF-8">
-                <title>Erfolgreich eingetragen</title>
+                <meta name="viewport" content="width=device-width, initial-scale=1.0">
+                <title>Eingecheckt</title>
                 <style>
-                    body {
-                        font-family: Arial, sans-serif;
-                        text-align: center;
-                        padding-top: 60px;
-                    }
-                    .support-footer {
-                        margin-top: 30px;
-                        padding-top: 18px;
-                        border-top: 1px solid #e5e7eb;
-                        text-align: center;
-                        font-size: 14px;
-                        color: #6b7280;
-                    }
-                    .support-footer a {
-                        color: #2563eb;
-                        text-decoration: none;
-                    }
-                    .support-footer a:hover {
-                        text-decoration: underline;
-                    }
+                    * { box-sizing: border-box; margin: 0; padding: 0; }
+                    :root { --bg:#f0f4f8; --surface:#fff; --text:#1e293b; --muted:#64748b; --border:#e2e8f0; --primary:#2563eb; }
+                    [data-theme="dark"] { --bg:#0f172a; --surface:#1e293b; --text:#f1f5f9; --muted:#94a3b8; --border:#334155; }
+                    body { min-height:100vh; background:var(--bg); color:var(--text); font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif; display:flex; align-items:center; justify-content:center; padding:32px 20px; }
+                    .card { background:var(--surface); border:1px solid var(--border); border-radius:20px; padding:40px 36px; max-width:440px; width:100%; text-align:center; box-shadow:0 8px 32px rgba(0,0,0,0.08); }
+                    .icon { font-size:52px; margin-bottom:16px; }
+                    h2 { font-size:22px; font-weight:800; margin-bottom:8px; }
+                    .sub { font-size:15px; color:var(--muted); margin-bottom:24px; }
+                    .back { display:inline-block; color:var(--primary); text-decoration:none; font-size:14px; font-weight:600; }
+                    .back:hover { text-decoration:underline; }
                 </style>
+                <script>(function(){var s=localStorage.getItem('deskview-theme')||'light';document.documentElement.setAttribute('data-theme',s);})();</script>
             </head>
             <body>
-                <h2>Erfolgreich eingetragen</h2>
-                <p><strong>${escapeHtml(fullName)}</strong> sitzt jetzt auf Platz ${pendingSeat}.</p>
-                <p>Status: ${escapeHtml(jobTitle)}</p>
-                ${renderSupportFooter()}
+                <div class="card">
+                    ${logoExists ? `<div style="margin-bottom:20px;"><img src="/logo.png" alt="Logo" style="max-height:60px;max-width:200px;object-fit:contain;"></div>` : ''}
+                    <div class="icon">&#10003;</div>
+                    <h2>Eingecheckt!</h2>
+                    <p class="sub"><strong>${escapeHtml(fullName)}</strong> sitzt jetzt auf Platz ${pendingSeat}.</p>
+                    <a href="/${encodeURIComponent(pendingRoom)}" class="back">&#8592; Zurück zur Raumübersicht</a>
+                    ${renderSupportFooter()}
+                </div>
             </body>
             </html>
         `);
