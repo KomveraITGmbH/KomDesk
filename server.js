@@ -4161,7 +4161,7 @@ app.post('/admin/server/reboot', requireAdmin, requirePermission('server.reboot'
     const admin = getCurrentAdmin(req);
     console.log(`[Server] Linux-Reboot angefordert von Admin: ${admin?.username || '?'}`);
     res.json({ ok: true });
-    setTimeout(() => exec('sudo reboot'), 500);
+    setTimeout(() => exec('sudo systemctl reboot'), 500);
 });
 
 app.post('/admin/save-sleep-schedule', requireAdmin, requirePermission('terminals.edit'), requireCsrf, async (req, res) => {

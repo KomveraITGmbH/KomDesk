@@ -153,18 +153,17 @@ sudo systemctl enable ${SERVICE_NAME}
 sudo systemctl restart ${SERVICE_NAME}
 
 # ──────────────────────────────────────────────
-# sudoers – Neustart ohne Passwort
+# sudoers – Befehle ohne Passwort
 # ──────────────────────────────────────────────
 echo "==> sudoers Eintrag wird erstellt..."
-SYSTEMCTL_BIN=$(which systemctl 2>/dev/null || echo "/usr/bin/systemctl")
-REBOOT_BIN=$(which reboot 2>/dev/null || echo "/usr/sbin/reboot")
+SYSTEMCTL_BIN=$(readlink -f "$(which systemctl 2>/dev/null || echo "/usr/bin/systemctl")")
 SUDOERS_FILE="/etc/sudoers.d/${SERVICE_NAME}"
 sudo tee "$SUDOERS_FILE" > /dev/null <<EOF
-${USER} ALL=(ALL) NOPASSWD: ${SYSTEMCTL_BIN} restart ${SERVICE_NAME}
-${USER} ALL=(ALL) NOPASSWD: ${SYSTEMCTL_BIN} stop ${SERVICE_NAME}
-${USER} ALL=(ALL) NOPASSWD: ${SYSTEMCTL_BIN} start ${SERVICE_NAME}
 ${USER} ALL=(ALL) NOPASSWD: ${SYSTEMCTL_BIN} status ${SERVICE_NAME} --no-pager -l
-${USER} ALL=(ALL) NOPASSWD: ${REBOOT_BIN}
+${USER} ALL=(ALL) NOPASSWD: ${SYSTEMCTL_BIN} restart ${SERVICE_NAME}
+${USER} ALL=(ALL) NOPASSWD: ${SYSTEMCTL_BIN} start ${SERVICE_NAME}
+${USER} ALL=(ALL) NOPASSWD: ${SYSTEMCTL_BIN} stop ${SERVICE_NAME}
+${USER} ALL=(ALL) NOPASSWD: ${SYSTEMCTL_BIN} reboot
 EOF
 sudo chmod 440 "$SUDOERS_FILE"
 if sudo visudo -cf "$SUDOERS_FILE"; then
