@@ -99,9 +99,6 @@ if [ "$HTTPS_ENABLED" = true ]; then
     echo "==> Certbot wird installiert..."
     sudo apt-get install -y certbot
 
-    echo "==> Laufenden Service stoppen falls vorhanden..."
-    sudo systemctl stop ${SERVICE_NAME} 2>/dev/null || true
-
     echo "==> Alte Zertifikatskonfiguration bereinigen..."
     sudo certbot delete --cert-name "$DOMAIN" --non-interactive 2>/dev/null || true
 
