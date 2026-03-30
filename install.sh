@@ -132,7 +132,8 @@ echo "==> systemd Service wird erstellt..."
 
 if [ "$HTTPS_ENABLED" = true ]; then
     EXTRA_ENV="Environment=NODE_ENV=production
-Environment=HTTPS_ENABLED=true"
+Environment=HTTPS_ENABLED=true
+Environment=DOMAIN=${DOMAIN}"
 else
     EXTRA_ENV="Environment=NODE_ENV=production"
 fi
@@ -157,7 +158,6 @@ EOF
 
 sudo systemctl daemon-reload
 sudo systemctl enable ${SERVICE_NAME}
-sudo systemctl restart ${SERVICE_NAME}
 
 # ──────────────────────────────────────────────
 # sudoers – Befehle ohne Passwort
@@ -200,6 +200,12 @@ if [ "$HTTPS_ENABLED" = true ]; then
     echo "   Pfad: /etc/letsencrypt/live/${DOMAIN}/"
     echo "   Zertifikat wird automatisch erneuert (certbot-Timer aktiv)."
 fi
+
+# ──────────────────────────────────────────────
+# Service starten (nach certbot, damit Zertifikat vorhanden)
+# ──────────────────────────────────────────────
+echo "==> Service wird gestartet..."
+sudo systemctl restart ${SERVICE_NAME}
 
 # ──────────────────────────────────────────────
 # Fertig

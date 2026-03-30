@@ -1,4 +1,5 @@
 const http    = require('http');
+const https   = require('https');
 const express = require('express');
 const cors = require('cors');
 const session = require('express-session');
@@ -6249,11 +6250,39 @@ START
 
         setInterval(runSeatAutoClear, 60 * 1000);
 
-        const httpServer = http.createServer(app);
+        const httpsEnabled = process.env.HTTPS_ENABLED === 'true';
+        const domain       = (process.env.DOMAIN || '').trim();
+
+        let mainServer;
+        if (httpsEnabled && domain) {
+            const certDir = `/etc/letsencrypt/live/${domain}`;
+            let tlsOptions;
+            try {
+                tlsOptions = {
+                    key:  fs.readFileSync(`${certDir}/privkey.pem`),
+                    cert: fs.readFileSync(`${certDir}/fullchain.pem`)
+                };
+            } catch (e) {
+                console.error('[HTTPS] Zertifikat nicht gefunden:', e.message);
+                process.exit(1);
+            }
+            mainServer = https.createServer(tlsOptions, app);
+
+            // HTTP → HTTPS Redirect auf Port 80
+            const redirectServer = http.createServer((req, res) => {
+                res.writeHead(301, { Location: `https://${domain}${req.url}` });
+                res.end();
+            });
+            redirectServer.listen(80, '0.0.0.0', () => {
+                console.log(`HTTP → HTTPS Redirect läuft auf Port 80`);
+            });
+        } else {
+            mainServer = http.createServer(app);
+        }
 
         const wss = new WebSocketServer({ noServer: true });
 
-        httpServer.on('upgrade', (req, socket, head) => {
+        mainServer.on('upgrade', (req, socket, head) => {
             console.log('[WS] Upgrade-Anfrage:', req.url);
             if (req.url && req.url.startsWith('/admin/ssh/ws')) {
                 const urlParams = new URL(req.url, 'http://localhost');
@@ -6347,8 +6376,9 @@ START
             });
         });
 
-        httpServer.listen(PORT, '0.0.0.0', () => {
-            console.log('Server läuft auf http://0.0.0.0:' + PORT);
+        mainServer.listen(PORT, '0.0.0.0', () => {
+            const proto = httpsEnabled ? 'https' : 'http';
+            console.log(`Server läuft auf ${proto}://0.0.0.0:${PORT}`);
             console.log('Beim ersten Start werden fehlende JSON-Dateien automatisch erstellt.');
         });
     } catch (err) {
