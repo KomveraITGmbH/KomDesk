@@ -206,7 +206,7 @@ EOF
 
     sudo ln -sf /etc/nginx/sites-available/${SERVICE_NAME} /etc/nginx/sites-enabled/${SERVICE_NAME}
     sudo nginx -t
-    sudo systemctl reload nginx
+    sudo systemctl restart nginx
 
     echo "==> SSL-Zertifikat wird beantragt (Let's Encrypt)..."
     sudo certbot --nginx \
