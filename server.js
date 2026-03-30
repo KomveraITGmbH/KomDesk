@@ -6250,12 +6250,20 @@ START
                             ws.send(JSON.stringify({ type: 'error', message: err.message }));
                         ws.close();
                     });
+                    const sshHost = String(msg.host || '127.0.0.1').trim();
+                    const sshPort = parseInt(msg.port) || 22;
+                    console.log(`[SSH] Verbindungsversuch zu ${sshHost}:${sshPort} als ${String(msg.username||'').trim()}`);
                     ssh.connect({
-                        host:     String(msg.host     || '').trim(),
-                        port:     parseInt(msg.port)  || 22,
-                        username: String(msg.username || '').trim(),
-                        password: String(msg.password || ''),
-                        readyTimeout: 10000
+                        host:           sshHost,
+                        port:           sshPort,
+                        username:       String(msg.username || '').trim(),
+                        password:       String(msg.password || ''),
+                        readyTimeout:   8000,
+                        hostVerifier:   () => true,
+                        algorithms: {
+                            serverHostKey: ['ssh-rsa','ecdsa-sha2-nistp256','ecdsa-sha2-nistp384','ecdsa-sha2-nistp521','ssh-ed25519']
+                        },
+                        debug: (info) => console.log('[SSH-DBG]', info)
                     });
                 } else if (ready && msg.type === 'data' && stream) {
                     stream.write(msg.data);
