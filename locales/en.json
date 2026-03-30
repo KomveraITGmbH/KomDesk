@@ -357,5 +357,43 @@
     "saveSleepSchedule": "Save Sleep Schedule",
     "assigned": "Assigned: ",
     "noRoomAssigned": "Not assigned to any room"
+  },
+  "permissions": {
+    "allPermissions": "All Permissions",
+    "noPermissions": "No permissions",
+    "selectAll": "Select all",
+    "deselectAll": "Deselect all",
+    "groups": {
+      "general": "General",
+      "rooms": "Rooms",
+      "links": "Room Links / Views",
+      "admins": "Admins",
+      "microsoft": "Microsoft",
+      "system": "System",
+      "terminals": "Terminals"
+    },
+    "dashboard_view": { "label": "View Dashboard",           "desc": "Can open the admin area home page." },
+    "rooms_view":     { "label": "View Rooms",               "desc": "Can see all rooms and their occupancy." },
+    "rooms_create":   { "label": "Create Rooms",             "desc": "Can create new rooms." },
+    "rooms_edit":     { "label": "Edit Rooms",               "desc": "Can edit department and room number of existing rooms." },
+    "rooms_delete":   { "label": "Delete Rooms",             "desc": "Can remove entire rooms." },
+    "rooms_clearSeat":{ "label": "Clear Seats",              "desc": "Can free occupied seats." },
+    "links_view":     { "label": "View Room Links",          "desc": "Can see the overview with all room views, APIs and seat links." },
+    "admins_view":    { "label": "View Admins",              "desc": "Can open the admin management." },
+    "admins_create":  { "label": "Create Admins",            "desc": "Can create new admins." },
+    "admins_edit":    { "label": "Edit Admins",              "desc": "Can change permissions of other regular admins." },
+    "admins_delete":  { "label": "Delete Admins",            "desc": "Can delete regular admins. The master is excluded." },
+    "microsoft_view": { "label": "View Microsoft Config",    "desc": "Can see the stored Microsoft / Entra data." },
+    "microsoft_edit": { "label": "Edit Microsoft Config",    "desc": "Can change Client ID, Tenant ID, Secret and Callback." },
+    "system_settings":{ "label": "System Settings",         "desc": "Can change the session secret." },
+    "system_logo":    { "label": "Manage Logo",              "desc": "Can upload and replace the application logo." },
+    "server_view":    { "label": "View Server Status",       "desc": "Can see uptime, memory and logs of the DeskView server." },
+    "server_restart": { "label": "Restart DeskView",         "desc": "Can restart the DeskView service." },
+    "server_reboot":  { "label": "Restart Linux",            "desc": "Can restart the entire Linux server." },
+    "server_ssh":     { "label": "SSH Console",              "desc": "Can use the SSH console in the admin area." },
+    "terminals_view":  { "label": "View Terminals",    "desc": "Can see TRMNL terminal devices." },
+    "terminals_create":{ "label": "Create Terminals",  "desc": "Can create new TRMNL terminals." },
+    "terminals_edit":  { "label": "Edit Terminals",    "desc": "Can change TRMNL terminal settings." },
+    "terminals_delete":{ "label": "Delete Terminals",  "desc": "Can remove TRMNL terminals." }
   }
 }

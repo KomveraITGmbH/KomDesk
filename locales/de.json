@@ -357,5 +357,43 @@
     "saveSleepSchedule": "Sleep Schedule speichern",
     "assigned": "Zugewiesen: ",
     "noRoomAssigned": "Keinem Raum zugewiesen"
+  },
+  "permissions": {
+    "allPermissions": "Alle Berechtigungen",
+    "noPermissions": "Keine Rechte",
+    "selectAll": "Alle wählen",
+    "deselectAll": "Alle abwählen",
+    "groups": {
+      "general": "Allgemein",
+      "rooms": "Räume",
+      "links": "Raumlinks / Ansichten",
+      "admins": "Admins",
+      "microsoft": "Microsoft",
+      "system": "System",
+      "terminals": "Terminals"
+    },
+    "dashboard_view": { "label": "Dashboard anzeigen", "desc": "Darf die Startseite des Adminbereichs öffnen." },
+    "rooms_view":     { "label": "Räume anzeigen",     "desc": "Darf alle Räume und deren Belegung sehen." },
+    "rooms_create":   { "label": "Räume erstellen",    "desc": "Darf neue Räume anlegen." },
+    "rooms_edit":     { "label": "Räume bearbeiten",   "desc": "Darf Abteilung und Raumnummer bestehender Räume ändern." },
+    "rooms_delete":   { "label": "Räume löschen",      "desc": "Darf komplette Räume entfernen." },
+    "rooms_clearSeat":{ "label": "Plätze leeren",      "desc": "Darf belegte Sitzplätze wieder freigeben." },
+    "links_view":     { "label": "Raumlinks anzeigen", "desc": "Darf die Übersicht mit allen Raumansichten, APIs und Sitzplatzlinks sehen." },
+    "admins_view":    { "label": "Admins anzeigen",    "desc": "Darf die Adminverwaltung öffnen." },
+    "admins_create":  { "label": "Admins erstellen",   "desc": "Darf neue Admins anlegen." },
+    "admins_edit":    { "label": "Admins bearbeiten",  "desc": "Darf Berechtigungen anderer normaler Admins ändern." },
+    "admins_delete":  { "label": "Admins löschen",     "desc": "Darf normale Admins löschen. Der Master ist ausgenommen." },
+    "microsoft_view": { "label": "Microsoft-Konfiguration anzeigen",   "desc": "Darf die gespeicherten Microsoft-/Entra-Daten sehen." },
+    "microsoft_edit": { "label": "Microsoft-Konfiguration bearbeiten", "desc": "Darf Client-ID, Tenant-ID, Secret und Callback ändern." },
+    "system_settings":{ "label": "System-Einstellungen",    "desc": "Darf Session Secret ändern." },
+    "system_logo":    { "label": "Logo verwalten",          "desc": "Darf das Logo der Anwendung hochladen und ersetzen." },
+    "server_view":    { "label": "Server-Status anzeigen",  "desc": "Darf Laufzeit, Speicher und Logs des DeskView-Servers sehen." },
+    "server_restart": { "label": "DeskView neu starten",    "desc": "Darf den DeskView-Dienst neu starten." },
+    "server_reboot":  { "label": "Linux neu starten",       "desc": "Darf den gesamten Linux-Server neu starten." },
+    "server_ssh":     { "label": "SSH-Konsole",             "desc": "Darf die SSH-Konsole im Admin-Bereich verwenden." },
+    "terminals_view":  { "label": "Terminals anzeigen",   "desc": "Darf TRMNL-Terminal-Geräte sehen." },
+    "terminals_create":{ "label": "Terminals erstellen",  "desc": "Darf neue TRMNL-Terminals anlegen." },
+    "terminals_edit":  { "label": "Terminals bearbeiten", "desc": "Darf TRMNL-Terminal-Einstellungen ändern." },
+    "terminals_delete":{ "label": "Terminals löschen",    "desc": "Darf TRMNL-Terminals entfernen." }
   }
 }

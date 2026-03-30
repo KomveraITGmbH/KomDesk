@@ -162,137 +162,61 @@ BERECHTIGUNGEN
 */
 const PERMISSION_GROUPS = [
     {
-        title: 'Allgemein',
+        localeKey: 'general',
         permissions: [
-            {
-                key: 'dashboard.view',
-                label: 'Dashboard anzeigen',
-                description: 'Darf die Startseite des Adminbereichs öffnen.'
-            }
+            { key: 'dashboard.view' }
         ]
     },
     {
-        title: 'Räume',
+        localeKey: 'rooms',
         permissions: [
-            {
-                key: 'rooms.view',
-                label: 'Räume anzeigen',
-                description: 'Darf alle Räume und deren Belegung sehen.'
-            },
-            {
-                key: 'rooms.create',
-                label: 'Räume erstellen',
-                description: 'Darf neue Räume anlegen.'
-            },
-            {
-                key: 'rooms.edit',
-                label: 'Räume bearbeiten',
-                description: 'Darf Abteilung und Raumnummer bestehender Räume ändern.'
-            },
-            {
-                key: 'rooms.delete',
-                label: 'Räume löschen',
-                description: 'Darf komplette Räume entfernen.'
-            },
-            {
-                key: 'rooms.clearSeat',
-                label: 'Plätze leeren',
-                description: 'Darf belegte Sitzplätze wieder freigeben.'
-            }
+            { key: 'rooms.view' },
+            { key: 'rooms.create' },
+            { key: 'rooms.edit' },
+            { key: 'rooms.delete' },
+            { key: 'rooms.clearSeat' }
         ]
     },
     {
-        title: 'Raumlinks / Ansichten',
+        localeKey: 'links',
         permissions: [
-            {
-                key: 'links.view',
-                label: 'Raumlinks anzeigen',
-                description: 'Darf die Übersicht mit allen Raumansichten, APIs und Sitzplatzlinks sehen.'
-            }
+            { key: 'links.view' }
         ]
     },
     {
-        title: 'Admins',
+        localeKey: 'admins',
         permissions: [
-            {
-                key: 'admins.view',
-                label: 'Admins anzeigen',
-                description: 'Darf die Adminverwaltung öffnen.'
-            },
-            {
-                key: 'admins.create',
-                label: 'Admins erstellen',
-                description: 'Darf neue Admins anlegen.'
-            },
-            {
-                key: 'admins.edit',
-                label: 'Admins bearbeiten',
-                description: 'Darf Berechtigungen anderer normaler Admins ändern.'
-            },
-            {
-                key: 'admins.delete',
-                label: 'Admins löschen',
-                description: 'Darf normale Admins löschen. Der Master ist ausgenommen.'
-            }
+            { key: 'admins.view' },
+            { key: 'admins.create' },
+            { key: 'admins.edit' },
+            { key: 'admins.delete' }
         ]
     },
     {
-        title: 'Microsoft',
+        localeKey: 'microsoft',
         permissions: [
-            {
-                key: 'microsoft.view',
-                label: 'Microsoft-Konfiguration anzeigen',
-                description: 'Darf die gespeicherten Microsoft-/Entra-Daten sehen.'
-            },
-            {
-                key: 'microsoft.edit',
-                label: 'Microsoft-Konfiguration bearbeiten',
-                description: 'Darf Client-ID, Tenant-ID, Secret und Callback ändern.'
-            }
+            { key: 'microsoft.view' },
+            { key: 'microsoft.edit' }
         ]
     },
     {
-        title: 'System',
+        localeKey: 'system',
         permissions: [
-            {
-                key: 'system.settings',
-                label: 'System-Einstellungen',
-                description: 'Darf Session Secret ändern.'
-            },
-            {
-                key: 'system.logo',
-                label: 'Logo verwalten',
-                description: 'Darf das Logo der Anwendung hochladen und ersetzen.'
-            },
-            {
-                key: 'server.view',
-                label: 'Server-Status anzeigen',
-                description: 'Darf Laufzeit, Speicher und Logs des DeskView-Servers sehen.'
-            },
-            {
-                key: 'server.restart',
-                label: 'DeskView neu starten',
-                description: 'Darf den DeskView-Dienst (komvera-deskview) neu starten.'
-            },
-            {
-                key: 'server.reboot',
-                label: 'Linux neu starten',
-                description: 'Darf den gesamten Linux-Server (sudo reboot) neu starten.'
-            },
-            {
-                key: 'server.ssh',
-                label: 'SSH-Konsole',
-                description: 'Darf die SSH-Konsole im Admin-Bereich verwenden.'
-            }
+            { key: 'system.settings' },
+            { key: 'system.logo' },
+            { key: 'server.view' },
+            { key: 'server.restart' },
+            { key: 'server.reboot' },
+            { key: 'server.ssh' }
         ]
     },
     {
-        title: 'Terminals',
+        localeKey: 'terminals',
         permissions: [
-            { key: 'terminals.view',   label: 'Terminals anzeigen',   description: 'Darf TRMNL-Terminal-Geräte sehen.' },
-            { key: 'terminals.create', label: 'Terminals erstellen',   description: 'Darf neue TRMNL-Terminals anlegen.' },
-            { key: 'terminals.edit',   label: 'Terminals bearbeiten',  description: 'Darf TRMNL-Terminal-Einstellungen ändern.' },
-            { key: 'terminals.delete', label: 'Terminals löschen',     description: 'Darf TRMNL-Terminals entfernen.' }
+            { key: 'terminals.view' },
+            { key: 'terminals.create' },
+            { key: 'terminals.edit' },
+            { key: 'terminals.delete' }
         ]
     }
 ];
@@ -334,7 +258,7 @@ const DEFAULT_ROOMS = {
 const DEFAULT_CONFIG = {
     sessionSecret: '',
     seatClearInterval: 'never',
-    language: 'de',
+    language: (() => { const e = (process.env.DEFAULT_LANG || 'de').toLowerCase(); return ['de','en'].includes(e) ? e : 'de'; })(),
     microsoftLoginEnabled: false,
     microsoft: {
         clientID: '',
@@ -785,32 +709,38 @@ function requirePermission(permission) {
     };
 }
 
-function renderPermissionCheckboxes(selectedPermissions = []) {
+function renderPermissionCheckboxes(selectedPermissions = [], L = {}) {
+    const P = L.permissions || {};
+    const G = P.groups || {};
     const allKeys = PERMISSION_GROUPS.flatMap(g => g.permissions.map(p => p.key));
     const allSelected = allKeys.every(k => selectedPermissions.includes(k));
 
     const groupsHtml = PERMISSION_GROUPS.map((group, gi) => {
         const groupKeys = group.permissions.map(p => p.key);
         const groupSelected = groupKeys.every(k => selectedPermissions.includes(k));
+        const groupTitle = G[group.localeKey] || group.localeKey;
         return `
         <div class="perm-group">
             <div class="perm-group-header" onclick="permToggleGroup(this)">
                 <span class="perm-group-arrow">&#9654;</span>
-                <span class="perm-group-title-text">${escapeHtml(group.title)}</span>
+                <span class="perm-group-title-text">${escapeHtml(groupTitle)}</span>
                 <button type="button" class="perm-group-all-btn" onclick="event.stopPropagation();permToggleGroupAll(this)"
                     data-group="${gi}" ${groupSelected ? 'data-all="1"' : ''}>
-                    ${groupSelected ? 'Alle abwählen' : 'Alle wählen'}
+                    ${groupSelected ? (P.deselectAll || 'Alle abwählen') : (P.selectAll || 'Alle wählen')}
                 </button>
             </div>
             <div class="perm-group-list" style="display:none;">
-                ${group.permissions.map(permission => `
+                ${group.permissions.map(permission => {
+                    const lk = permission.key.replace('.', '_');
+                    const pl = P[lk] || {};
+                    return `
                     <label class="perm-item">
                         <div class="perm-text">
                             <div class="perm-label">
-                                ${escapeHtml(permission.label)}
+                                ${escapeHtml(pl.label || permission.key)}
                                 <span class="perm-info-wrap">
                                     <span class="perm-info-btn" tabindex="0" aria-label="Info">&#x24D8;</span>
-                                    <span class="perm-tooltip">${escapeHtml(permission.description)}</span>
+                                    <span class="perm-tooltip">${escapeHtml(pl.desc || '')}</span>
                                 </span>
                             </div>
                         </div>
@@ -825,7 +755,7 @@ function renderPermissionCheckboxes(selectedPermissions = []) {
                             >
                         </div>
                     </label>
-                `).join('')}
+                `}).join('')}
             </div>
         </div>
     `}).join('');
@@ -834,41 +764,48 @@ function renderPermissionCheckboxes(selectedPermissions = []) {
         <div class="perm-global-bar">
             <button type="button" class="perm-all-btn" id="permAllBtn" onclick="permToggleAll(this)"
                 ${allSelected ? 'data-all="1"' : ''}>
-                ${allSelected ? '&#10007; Alle abwählen' : '&#10003; Alle Berechtigungen'}
+                ${allSelected ? '&#10007; ' + (P.deselectAll || 'Alle abwählen') : '&#10003; ' + (P.allPermissions || 'Alle Berechtigungen')}
             </button>
         </div>
         ${groupsHtml}
     `;
 }
 
-function formatAdminPermissions(admin) {
+function formatAdminPermissions(admin, L = {}) {
     if (admin.master) {
         return '<span class="badge badge-master">MASTER</span>';
     }
 
     const perms = admin.permissions || [];
     const allPerms = AVAILABLE_PERMISSIONS;
+    const P = L.permissions || {};
+    const G = P.groups || {};
 
     if (perms.length === allPerms.length && allPerms.every(p => perms.includes(p))) {
-        return '<span class="badge">✓ Alle Berechtigungen</span>';
+        return `<span class="badge">✓ ${P.allPermissions || 'Alle Berechtigungen'}</span>`;
     }
 
     if (perms.length === 0) {
-        return '<span class="muted">Keine Rechte</span>';
+        return `<span class="muted">${P.noPermissions || 'Keine Rechte'}</span>`;
     }
 
     const groups = PERMISSION_GROUPS.map(group => {
         const matches = group.permissions.filter(p => perms.includes(p.key));
         if (matches.length === 0) return '';
+        const groupTitle = G[group.localeKey] || group.localeKey;
         return `
         <div style="border:1px solid var(--border);border-radius:6px;overflow:hidden;margin-bottom:6px;">
             <div onclick="this.nextElementSibling.style.display=this.nextElementSibling.style.display==='none'?'block':'none';this.querySelector('.pg-arrow').style.transform=this.nextElementSibling.style.display==='block'?'rotate(90deg)':''"
                 style="display:flex;justify-content:space-between;align-items:center;padding:7px 12px;cursor:pointer;font-size:13px;font-weight:600;user-select:none;">
-                <span><span class="pg-arrow" style="font-size:11px;opacity:.5;margin-right:6px;display:inline-block;transition:transform .15s;">▶</span>${escapeHtml(group.title)}</span>
+                <span><span class="pg-arrow" style="font-size:11px;opacity:.5;margin-right:6px;display:inline-block;transition:transform .15s;">▶</span>${escapeHtml(groupTitle)}</span>
                 <span style="font-size:11px;opacity:.5;">${matches.length}/${group.permissions.length}</span>
             </div>
             <div style="display:none;padding:6px 12px 10px 12px;border-top:1px solid var(--border);">
-                ${matches.map(p => `<div style="font-size:12px;padding:2px 0;opacity:.7;">• ${escapeHtml(p.label)}</div>`).join('')}
+                ${matches.map(p => {
+                    const lk = p.key.replace('.', '_');
+                    const pl = P[lk] || {};
+                    return `<div style="font-size:12px;padding:2px 0;opacity:.7;">• ${escapeHtml(pl.label || p.key)}</div>`;
+                }).join('')}
             </div>
         </div>`;
     }).filter(Boolean).join('');
@@ -3286,7 +3223,7 @@ app.get('/admin', requireAdmin, requirePermission('dashboard.view'), (req, res) 
     const myPermsHtml = `
         <div class="card">
             <div class="db-card-title" data-i18n="dashboard.myPermissions">${L.dashboard?.myPermissions}</div>
-            ${formatAdminPermissions(currentAdmin)}
+            ${formatAdminPermissions(currentAdmin, L)}
         </div>`;
 
     // --- Microsoft ---
@@ -4861,12 +4798,13 @@ RAUMLINKS / ANSICHTEN
 ==================================================
 */
 app.get('/admin/links', requireAdmin, requirePermission('links.view'), (req, res) => {
+    const L = loadLocale();
     const roomCards = Object.values(rooms).map((room) => {
         const seatLinks = room.seats.map((_, index) => {
             const seatNumber = index + 1;
             return `
                 <a class="small-link" href="/${encodeURIComponent(room.id)}/sit/${seatNumber}" target="_blank">
-                    Platz ${seatNumber}
+                    ${L.rooms?.seat || 'Seat'} ${seatNumber}
                 </a>
             `;
         }).join('');
@@ -4910,6 +4848,7 @@ ADMINS
 ==================================================
 */
 app.get('/admin/admins', requireAdmin, requirePermission('admins.view'), (req, res) => {
+    const L = loadLocale();
     const adminRows = admins.map((admin) => `
         <tr>
             <td>
@@ -4917,7 +4856,7 @@ app.get('/admin/admins', requireAdmin, requirePermission('admins.view'), (req, r
                 <div style="font-size:12px; color:var(--muted);">@${escapeHtml(admin.username)} ${admin.master ? '<span class="badge badge-master">MASTER</span>' : ''}</div>
             </td>
             <td>********</td>
-            <td>${formatAdminPermissions(admin)}</td>
+            <td>${formatAdminPermissions(admin, L)}</td>
             <td>
                 ${
                     !admin.master && hasPermission(req, 'admins.edit')
@@ -4976,7 +4915,7 @@ app.get('/admin/admins', requireAdmin, requirePermission('admins.view'), (req, r
 
                         <label data-i18n="admins.permissions">Berechtigungen</label>
                         <div class="permission-box">
-                            ${renderPermissionCheckboxes([])}
+                            ${renderPermissionCheckboxes([], L)}
                         </div>
 
                         <button type="submit" style="margin-top:16px;" data-i18n="admins.createAdmin">Admin erstellen</button>
@@ -5154,7 +5093,7 @@ app.get('/admin/admins/edit/:username', requireAdmin, requirePermission('admins.
 
                 <label data-i18n="admins.permissions">Berechtigungen</label>
                 <div class="permission-box">
-                    ${renderPermissionCheckboxes(admin.permissions)}
+                    ${renderPermissionCheckboxes(admin.permissions, L)}
                 </div>
 
                 <button type="submit" style="margin-top:16px;" data-i18n="admins.saveChanges">Änderungen speichern</button>
