@@ -57,6 +57,7 @@ const ADMINS_FILE = path.join(DATA_DIR, 'admins.json');
 const CONFIG_FILE = path.join(DATA_DIR, 'config.json');
 const KEY_FILE = path.join(DATA_DIR, 'app.key');
 const TERMINALS_FILE = path.join(DATA_DIR, 'terminals.json');
+const DASHBOARD_LAYOUTS_FILE = path.join(DATA_DIR, 'dashboard_layouts.json');
 
 /*
 ==================================================
@@ -352,6 +353,7 @@ DATEN LADEN
 */
 let rooms = ensureJsonFile(ROOMS_FILE, DEFAULT_ROOMS);
 let terminals = ensureJsonFile(TERMINALS_FILE, {});
+let dashboardLayouts = ensureJsonFile(DASHBOARD_LAYOUTS_FILE, {});
 let admins = ensureJsonFile(ADMINS_FILE, []);
 let appConfig = ensureJsonFile(CONFIG_FILE, DEFAULT_CONFIG);
 
@@ -480,6 +482,10 @@ function saveRooms() {
 
 function saveTerminals() {
     writeJsonFile(TERMINALS_FILE, terminals);
+}
+
+function saveDashboardLayouts() {
+    writeJsonFile(DASHBOARD_LAYOUTS_FILE, dashboardLayouts);
 }
 
 function getTerminal(id) {
@@ -2961,245 +2967,301 @@ ADMIN DASHBOARD
 */
 app.get('/admin', requireAdmin, requirePermission('dashboard.view'), (req, res) => {
     const currentAdmin = getCurrentAdmin(req);
-    const roomList = Object.values(rooms);
-    const totalSeats    = roomList.reduce((s, r) => s + r.seats.length, 0);
-    const occupiedSeats = roomList.reduce((s, r) => s + r.seats.filter(seat => seat.name && seat.name !== 'Frei').length, 0);
-    const freeSeats     = totalSeats - occupiedSeats;
+    const roomList     = Object.values(rooms);
+    const totalSeats   = roomList.reduce((s, r) => s + r.seats.length, 0);
+    const occupiedSeats= roomList.reduce((s, r) => s + r.seats.filter(seat => seat.name && seat.name !== 'Frei').length, 0);
+    const freeSeats    = totalSeats - occupiedSeats;
 
-    // --- Widget Definitionen (server-side rendered HTML) ---
-    const widgets = [
+    // Widget-Definitionen
+    const WIDGETS = [
         {
-            id: 'stats',
-            title: 'Statistiken',
-            always: true,
-            html: `
-            <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:12px;">
-                <div style="text-align:center;padding:16px;border:1px solid var(--border);border-radius:8px;">
-                    <div style="font-size:32px;font-weight:700;">${roomList.length}</div>
-                    <div style="opacity:.6;font-size:13px;margin-top:4px;">Räume</div>
-                </div>
-                <div style="text-align:center;padding:16px;border:1px solid var(--border);border-radius:8px;">
-                    <div style="font-size:32px;font-weight:700;color:#dc2626;">${occupiedSeats}</div>
-                    <div style="opacity:.6;font-size:13px;margin-top:4px;">Belegt</div>
-                </div>
-                <div style="text-align:center;padding:16px;border:1px solid var(--border);border-radius:8px;">
-                    <div style="font-size:32px;font-weight:700;color:#059669;">${freeSeats}</div>
-                    <div style="opacity:.6;font-size:13px;margin-top:4px;">Frei</div>
-                </div>
+            id: 'stats', title: 'Statistiken', icon: '📊',
+            html: `<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px;text-align:center;">
+                <div style="padding:14px;border:1px solid var(--border);border-radius:8px;"><div style="font-size:28px;font-weight:700;">${roomList.length}</div><div style="opacity:.55;font-size:12px;margin-top:3px;">Räume</div></div>
+                <div style="padding:14px;border:1px solid var(--border);border-radius:8px;"><div style="font-size:28px;font-weight:700;color:#dc2626;">${occupiedSeats}</div><div style="opacity:.55;font-size:12px;margin-top:3px;">Belegt</div></div>
+                <div style="padding:14px;border:1px solid var(--border);border-radius:8px;"><div style="font-size:28px;font-weight:700;color:#059669;">${freeSeats}</div><div style="opacity:.55;font-size:12px;margin-top:3px;">Frei</div></div>
             </div>
-            <div style="margin-top:12px;background:var(--border);border-radius:999px;height:8px;overflow:hidden;">
-                <div style="height:100%;width:${totalSeats ? Math.round(occupiedSeats/totalSeats*100) : 0}%;background:#dc2626;border-radius:999px;transition:width .4s;"></div>
-            </div>
-            <div style="text-align:center;font-size:12px;opacity:.5;margin-top:4px;">${totalSeats ? Math.round(occupiedSeats/totalSeats*100) : 0}% Auslastung</div>`
+            <div style="margin-top:10px;background:var(--border);border-radius:999px;height:7px;overflow:hidden;"><div style="height:100%;width:${totalSeats?Math.round(occupiedSeats/totalSeats*100):0}%;background:#dc2626;border-radius:999px;"></div></div>
+            <div style="text-align:center;font-size:11px;opacity:.45;margin-top:4px;">${totalSeats?Math.round(occupiedSeats/totalSeats*100):0}% Auslastung</div>`
         },
         {
-            id: 'room_occupancy',
-            title: 'Raumauslastung',
-            html: roomList.length === 0 ? '<p style="opacity:.5;">Keine Räume vorhanden.</p>' :
-                roomList.map(r => {
-                    const total = r.seats.length;
-                    const occ   = r.seats.filter(s => s.name && s.name !== 'Frei').length;
-                    const pct   = total ? Math.round(occ/total*100) : 0;
-                    const color = pct === 100 ? '#dc2626' : pct > 50 ? '#f59e0b' : '#059669';
-                    return `
-                    <div style="margin-bottom:12px;">
-                        <div style="display:flex;justify-content:space-between;font-size:13px;margin-bottom:4px;">
-                            <span><strong>${escapeHtml(r.abteilung)}</strong> <span style="opacity:.5;">${escapeHtml(r.roomnumber)}</span></span>
-                            <span style="color:${color};">${occ}/${total}</span>
-                        </div>
-                        <div style="background:var(--border);border-radius:999px;height:6px;overflow:hidden;">
-                            <div style="height:100%;width:${pct}%;background:${color};border-radius:999px;"></div>
-                        </div>
-                    </div>`;
-                }).join('')
+            id: 'room_occupancy', title: 'Raumauslastung', icon: '🏢',
+            html: roomList.length === 0 ? '<p style="opacity:.5;font-size:13px;">Keine Räume.</p>' :
+                roomList.map(r => { const tot=r.seats.length,occ=r.seats.filter(s=>s.name&&s.name!=='Frei').length,pct=tot?Math.round(occ/tot*100):0,c=pct===100?'#dc2626':pct>50?'#f59e0b':'#059669'; return `<div style="margin-bottom:10px;"><div style="display:flex;justify-content:space-between;font-size:13px;margin-bottom:3px;"><span><strong>${escapeHtml(r.abteilung)}</strong> <span style="opacity:.5;">${escapeHtml(r.roomnumber)}</span></span><span style="color:${c};">${occ}/${tot}</span></div><div style="background:var(--border);border-radius:999px;height:5px;overflow:hidden;"><div style="height:100%;width:${pct}%;background:${c};border-radius:999px;"></div></div></div>`; }).join('')
         },
         {
-            id: 'occupied_seats',
-            title: 'Belegte Plätze',
-            html: (() => {
-                const occ = [];
-                roomList.forEach(r => r.seats.forEach(s => {
-                    if (s.name && s.name !== 'Frei') occ.push({ room: r.abteilung, roomnr: r.roomnumber, name: s.name, title: s.title });
-                }));
-                if (occ.length === 0) return '<p style="opacity:.5;">Aktuell keine belegten Plätze.</p>';
-                return `<div style="display:flex;flex-direction:column;gap:8px;">${occ.map(o => `
-                    <div style="display:flex;justify-content:space-between;align-items:center;padding:8px 10px;border:1px solid var(--border);border-radius:6px;font-size:13px;">
-                        <div><strong>${escapeHtml(o.name)}</strong>${o.title ? `<span style="opacity:.6;margin-left:6px;">${escapeHtml(o.title)}</span>` : ''}</div>
-                        <div style="opacity:.5;">${escapeHtml(o.room)} · ${escapeHtml(o.roomnr)}</div>
-                    </div>`).join('')}</div>`;
-            })()
+            id: 'occupied_seats', title: 'Belegte Plätze', icon: '📋',
+            html: (() => { const occ=[]; roomList.forEach(r=>r.seats.forEach(s=>{if(s.name&&s.name!=='Frei')occ.push({room:r.abteilung,nr:r.roomnumber,name:s.name,title:s.title});})); if(!occ.length) return '<p style="opacity:.5;font-size:13px;">Keine belegten Plätze.</p>'; return occ.map(o=>`<div style="display:flex;justify-content:space-between;align-items:center;padding:7px 10px;border:1px solid var(--border);border-radius:6px;font-size:13px;margin-bottom:6px;"><div><strong>${escapeHtml(o.name)}</strong>${o.title?`<span style="opacity:.6;margin-left:6px;">${escapeHtml(o.title)}</span>`:''}</div><div style="opacity:.45;font-size:12px;">${escapeHtml(o.room)}</div></div>`).join(''); })()
         },
         {
-            id: 'terminals',
-            title: 'Terminals',
-            html: (() => {
-                const tList = Object.values(terminals);
-                if (tList.length === 0) return '<p style="opacity:.5;">Keine Terminals konfiguriert. <a href="/admin/terminals">Terminal anlegen →</a></p>';
-                return `<div style="display:flex;flex-direction:column;gap:8px;">${tList.map(t => {
-                    const assigned = roomList.find(r => r.terminalId === t.id);
-                    const modeLabel = { none: '–', polling: 'Polling', webhook: 'Webhook' }[t.trmnlMode||'none'];
-                    const modeColor = t.trmnlMode === 'webhook' ? '#059669' : t.trmnlMode === 'polling' ? '#6366f1' : '#6b7280';
-                    return `
-                    <div style="display:flex;justify-content:space-between;align-items:center;padding:8px 10px;border:1px solid var(--border);border-radius:6px;font-size:13px;">
-                        <div>
-                            <strong>${escapeHtml(t.name)}</strong>
-                            ${assigned ? `<span style="opacity:.6;margin-left:6px;">→ ${escapeHtml(assigned.abteilung)}</span>` : '<span style="opacity:.4;margin-left:6px;">nicht zugewiesen</span>'}
-                        </div>
-                        <span style="font-size:11px;padding:2px 8px;border-radius:999px;background:${modeColor}20;color:${modeColor};font-weight:600;">${modeLabel}</span>
-                    </div>`;
-                }).join('')}</div>`;
-            })()
+            id: 'terminals', title: 'Terminals', icon: '🖥️',
+            html: (() => { const tl=Object.values(terminals); if(!tl.length) return '<p style="opacity:.5;font-size:13px;">Keine Terminals. <a href="/admin/terminals">Anlegen →</a></p>'; return tl.map(t=>{const asgn=roomList.find(r=>r.terminalId===t.id),mc=t.trmnlMode==='webhook'?'#059669':t.trmnlMode==='polling'?'#6366f1':'#6b7280',hasStatus=!!(t.trmnlDeviceApiKey&&t.trmnlDeviceMac),ivl=t.statusRefreshInterval||30; return `<div class="term-live-row" data-tid="${escapeHtml(t.id)}" data-interval="${ivl}" style="padding:8px 10px;border:1px solid var(--border);border-radius:6px;font-size:13px;margin-bottom:6px;"><div style="display:flex;justify-content:space-between;align-items:center;"><div><strong>${escapeHtml(t.name)}</strong>${asgn?`<span style="opacity:.5;margin-left:6px;">→ ${escapeHtml(asgn.abteilung)}</span>`:'<span style="opacity:.35;margin-left:6px;">nicht zugewiesen</span>'}</div><span style="font-size:11px;padding:2px 7px;border-radius:999px;background:${mc}22;color:${mc};font-weight:600;">${escapeHtml(t.trmnlMode||'none')}</span></div>${hasStatus?'<div class="ts-status" style="margin-top:5px;font-size:12px;opacity:.6;"><span class="ts-batt">🔋 –</span>&ensp;<span class="ts-wifi">📶 –</span>&ensp;<span class="ts-sleep"></span></div>':''}</div>`; }).join(''); })()
         },
         {
-            id: 'microsoft',
-            title: 'Microsoft / Entra ID',
-            html: (() => {
-                const cfg = microsoftConfig;
-                const enabled = appConfig.microsoftLoginEnabled;
-                const configured = !!(cfg.clientID && cfg.tenantID && cfg.clientSecret && cfg.callbackURL);
-                return `
-                <div style="display:flex;flex-direction:column;gap:8px;font-size:13px;">
-                    <div style="display:flex;justify-content:space-between;padding:8px 10px;border:1px solid var(--border);border-radius:6px;">
-                        <span>Login aktiviert</span>
-                        <span style="font-weight:600;color:${enabled ? '#059669' : '#6b7280'};">${enabled ? '✅ Ja' : '❌ Nein'}</span>
-                    </div>
-                    <div style="display:flex;justify-content:space-between;padding:8px 10px;border:1px solid var(--border);border-radius:6px;">
-                        <span>Konfiguriert</span>
-                        <span style="font-weight:600;color:${configured ? '#059669' : '#f59e0b'};">${configured ? '✅ Vollständig' : '⚠️ Unvollständig'}</span>
-                    </div>
-                    ${cfg.tenantID ? `<div style="padding:8px 10px;border:1px solid var(--border);border-radius:6px;opacity:.6;">Tenant: ${escapeHtml(cfg.tenantID)}</div>` : ''}
-                </div>`;
-            })()
+            id: 'microsoft', title: 'Microsoft / Entra ID', icon: '🔷',
+            html: (() => { const cfg=microsoftConfig,en=appConfig.microsoftLoginEnabled,ok=!!(cfg.clientID&&cfg.tenantID&&cfg.clientSecret&&cfg.callbackURL); return `<div style="display:flex;flex-direction:column;gap:7px;font-size:13px;"><div style="display:flex;justify-content:space-between;padding:7px 10px;border:1px solid var(--border);border-radius:6px;"><span>Login aktiviert</span><span style="font-weight:600;color:${en?'#059669':'#6b7280'};">${en?'✅ Ja':'❌ Nein'}</span></div><div style="display:flex;justify-content:space-between;padding:7px 10px;border:1px solid var(--border);border-radius:6px;"><span>Konfiguriert</span><span style="font-weight:600;color:${ok?'#059669':'#f59e0b'};">${ok?'✅ Vollständig':'⚠️ Unvollständig'}</span></div>${cfg.tenantID?`<div style="padding:7px 10px;border:1px solid var(--border);border-radius:6px;opacity:.55;">Tenant: ${escapeHtml(cfg.tenantID)}</div>`:''}</div>`; })()
         },
         {
-            id: 'quick_actions',
-            title: 'Schnellaktionen',
-            html: `
-            <div style="display:flex;flex-wrap:wrap;gap:8px;">
-                ${hasPermission(req, 'rooms.create') ? `<a href="/admin/rooms" class="small-link" style="padding:8px 14px;border:1px solid var(--border);border-radius:6px;text-decoration:none;font-size:13px;">+ Raum</a>` : ''}
-                ${hasPermission(req, 'terminals.create') ? `<a href="/admin/terminals" class="small-link" style="padding:8px 14px;border:1px solid var(--border);border-radius:6px;text-decoration:none;font-size:13px;">+ Terminal</a>` : ''}
-                ${hasPermission(req, 'admins.create') ? `<a href="/admin/admins" class="small-link" style="padding:8px 14px;border:1px solid var(--border);border-radius:6px;text-decoration:none;font-size:13px;">+ Admin</a>` : ''}
-                ${hasPermission(req, 'links.view') ? `<a href="/admin/links" class="small-link" style="padding:8px 14px;border:1px solid var(--border);border-radius:6px;text-decoration:none;font-size:13px;">🔗 Raumlinks</a>` : ''}
-            </div>`
+            id: 'quick_actions', title: 'Schnellaktionen', icon: '⚡',
+            html: `<div style="display:flex;flex-wrap:wrap;gap:8px;">${[hasPermission(req,'rooms.create')?`<a href="/admin/rooms" class="small-link" style="padding:7px 13px;border:1px solid var(--border);border-radius:6px;text-decoration:none;font-size:13px;">+ Raum</a>`:'',hasPermission(req,'terminals.create')?`<a href="/admin/terminals" class="small-link" style="padding:7px 13px;border:1px solid var(--border);border-radius:6px;text-decoration:none;font-size:13px;">+ Terminal</a>`:'',hasPermission(req,'admins.create')?`<a href="/admin/admins" class="small-link" style="padding:7px 13px;border:1px solid var(--border);border-radius:6px;text-decoration:none;font-size:13px;">+ Admin</a>`:'',hasPermission(req,'links.view')?`<a href="/admin/links" class="small-link" style="padding:7px 13px;border:1px solid var(--border);border-radius:6px;text-decoration:none;font-size:13px;">🔗 Raumlinks</a>`:''].filter(Boolean).join('')}</div>`
         },
         {
-            id: 'my_permissions',
-            title: 'Meine Rechte',
+            id: 'my_permissions', title: 'Meine Rechte', icon: '👤',
             html: formatAdminPermissions(currentAdmin)
         },
         {
-            id: 'admins_list',
-            title: 'Admins',
-            html: (() => {
-                if (!hasPermission(req, 'admins.view')) return '<p style="opacity:.5;">Keine Berechtigung.</p>';
-                return `<div style="display:flex;flex-direction:column;gap:6px;">${admins.map(a => `
-                    <div style="display:flex;justify-content:space-between;align-items:center;padding:7px 10px;border:1px solid var(--border);border-radius:6px;font-size:13px;">
-                        <span>${escapeHtml(a.displayName || a.username)}${a.master ? ' <span class="badge badge-master" style="font-size:10px;">MASTER</span>' : ''}</span>
-                        <span style="opacity:.4;">${a.microsoft ? 'Microsoft' : 'Lokal'}</span>
-                    </div>`).join('')}</div>`;
-            })()
+            id: 'admins_list', title: 'Admins', icon: '👥',
+            html: !hasPermission(req,'admins.view') ? '<p style="opacity:.5;font-size:13px;">Keine Berechtigung.</p>' :
+                `<div style="display:flex;flex-direction:column;gap:6px;">${admins.map(a=>`<div style="display:flex;justify-content:space-between;align-items:center;padding:7px 10px;border:1px solid var(--border);border-radius:6px;font-size:13px;"><span>${escapeHtml(a.displayName||a.username)}${a.master?' <span class="badge badge-master" style="font-size:10px;">MASTER</span>':''}</span><span style="opacity:.4;">${a.microsoft?'Microsoft':'Lokal'}</span></div>`).join('')}</div>`
         }
     ];
 
-    const widgetHtml = widgets.map(w => `
-        <div class="card widget-card" data-widget="${w.id}" ${w.always ? 'data-always="1"' : ''}>
-            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;">
-                <h2 style="margin:0;font-size:15px;">${w.title}</h2>
-                ${!w.always ? `<button type="button" onclick="hideWidget('${w.id}')" style="background:none;border:none;cursor:pointer;opacity:.4;font-size:16px;padding:0;" title="Widget ausblenden">✕</button>` : ''}
-            </div>
-            ${w.html}
-        </div>`).join('');
+    // Widgets nach Berechtigungen filtern
+    const WIDGET_PERM_MAP = {
+        stats:          'rooms.view',
+        room_occupancy: 'rooms.view',
+        occupied_seats: 'rooms.view',
+        terminals:      'terminals.view',
+        microsoft:      'microsoft.view',
+        admins_list:    'admins.view',
+    };
+    const ALLOWED_WIDGETS = WIDGETS.filter(w => {
+        const perm = WIDGET_PERM_MAP[w.id];
+        return !perm || hasPermission(req, perm);
+    });
+
+    // Erlaubte Widgets als versteckte Templates rendern
+    const widgetTemplates = ALLOWED_WIDGETS.map(w =>
+        `<div id="wt_${w.id}" style="display:none;">${w.html}</div>`
+    ).join('');
 
     const content = `
+        ${widgetTemplates}
         <div class="topbar">
             <div>
                 <h1 class="page-title">Dashboard</h1>
-                <div class="muted">
-                    Angemeldet als ${escapeHtml(currentAdmin?.displayName || currentAdmin?.username || 'Admin')}
-                    ${currentAdmin?.master ? '<span class="badge badge-master">MASTER</span>' : ''}
+                <div class="muted">Angemeldet als ${escapeHtml(currentAdmin?.displayName||currentAdmin?.username||'Admin')} ${currentAdmin?.master?'<span class="badge badge-master">MASTER</span>':''}</div>
+            </div>
+            <button type="button" id="configBtn" onclick="openConfig()" style="display:flex;align-items:center;gap:6px;font-size:13px;">⚙️ Konfigurieren</button>
+        </div>
+
+        <div id="dashGrid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(340px,1fr));gap:16px;align-items:start;min-height:120px;"></div>
+
+        <div id="dashEmpty" style="display:none;text-align:center;padding:60px 20px;opacity:.4;">
+            <div style="font-size:40px;margin-bottom:12px;">📊</div>
+            <div style="font-size:15px;">Dashboard ist leer</div>
+            <div style="font-size:13px;margin-top:6px;">Klicke auf <strong>Konfigurieren</strong> um Widgets hinzuzufügen</div>
+        </div>
+
+        <!-- Config Sidebar -->
+        <div id="configOverlay" onclick="closeConfig()" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.35);z-index:200;"></div>
+        <div id="configPanel" style="display:none;position:fixed;top:0;right:0;width:280px;height:100%;background:var(--card);border-left:1px solid var(--border);z-index:201;display:flex;flex-direction:column;box-shadow:-6px 0 24px rgba(0,0,0,.15);">
+            <div style="padding:18px 18px 12px;border-bottom:1px solid var(--border);display:flex;justify-content:space-between;align-items:center;flex-shrink:0;">
+                <div>
+                    <div style="font-weight:700;font-size:15px;">Widgets</div>
+                    <div style="font-size:12px;opacity:.5;margin-top:2px;">Auf Dashboard ziehen</div>
                 </div>
+                <button type="button" onclick="closeConfig()" style="background:none;border:none;cursor:pointer;font-size:20px;opacity:.5;padding:0;">✕</button>
             </div>
-            <button type="button" onclick="openWidgetSettings()" style="display:flex;align-items:center;gap:6px;font-size:13px;">⚙️ Dashboard anpassen</button>
+            <div id="widgetCatalog" style="flex:1;overflow-y:auto;padding:12px;display:flex;flex-direction:column;gap:8px;"></div>
+            <div style="padding:12px 18px;border-top:1px solid var(--border);flex-shrink:0;">
+                <button type="button" onclick="clearDash()" style="width:100%;background:none;border:1px solid var(--border);color:var(--text);font-size:13px;padding:8px;">Dashboard leeren</button>
+            </div>
         </div>
 
-        <div id="widgetGrid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(340px,1fr));gap:16px;align-items:start;">
-            ${widgetHtml}
-        </div>
+        <!-- Drop indicator -->
+        <div id="dropIndicator" style="display:none;position:fixed;inset:0;background:rgba(99,102,241,.08);border:3px dashed #6366f1;z-index:150;pointer-events:none;border-radius:8px;"></div>
 
-        <!-- Widget Settings Panel -->
-        <div id="widgetOverlay" onclick="closeWidgetSettings()" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.4);z-index:100;"></div>
-        <div id="widgetPanel" style="display:none;position:fixed;top:0;right:0;width:300px;height:100%;background:var(--card);border-left:1px solid var(--border);z-index:101;padding:24px;overflow-y:auto;box-shadow:-4px 0 20px rgba(0,0,0,.15);">
-            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:20px;">
-                <h2 style="margin:0;font-size:16px;">Dashboard anpassen</h2>
-                <button type="button" onclick="closeWidgetSettings()" style="background:none;border:none;cursor:pointer;font-size:20px;opacity:.6;">✕</button>
-            </div>
-            <p style="font-size:13px;opacity:.6;margin-bottom:16px;">Wähle welche Widgets angezeigt werden sollen.</p>
-            <div id="widgetToggles" style="display:flex;flex-direction:column;gap:10px;"></div>
-            <button type="button" onclick="resetWidgets()" style="margin-top:20px;width:100%;background:var(--border);color:var(--text);">Zurücksetzen</button>
-        </div>
+        <style>
+        .dash-widget { position:relative; cursor:grab; }
+        .dash-widget:active { cursor:grabbing; }
+        .dash-widget .w-remove { display:none;position:absolute;top:10px;right:10px;background:none;border:none;cursor:pointer;font-size:16px;opacity:.4;padding:0;line-height:1; }
+        .dash-widget:hover .w-remove { display:block; }
+        .dash-widget .w-remove:hover { opacity:.9; }
+        .catalog-chip { padding:10px 14px;border:1px solid var(--border);border-radius:8px;cursor:grab;font-size:13px;user-select:none;display:flex;align-items:center;gap:8px;transition:background .15s; }
+        .catalog-chip:hover { background:var(--sidebar-hover); }
+        .catalog-chip.used { opacity:.35;cursor:not-allowed; }
+        .dash-widget.drag-over { outline:2px dashed #6366f1;outline-offset:3px; }
+        </style>
 
         <script>
-        var WIDGET_IDS = ${JSON.stringify(widgets.filter(w => !w.always).map(w => ({ id: w.id, title: w.title })))};
-        var STORAGE_KEY = 'deskview-hidden-widgets';
+        var CATALOG = ${JSON.stringify(ALLOWED_WIDGETS.map(w => ({ id: w.id, title: w.title, icon: w.icon })))};
+        var DASH_KEY = 'deskview-dashboard-v2';
+        var SERVER_LAYOUT = ${JSON.stringify(Object.prototype.hasOwnProperty.call(dashboardLayouts, currentAdmin.username) ? dashboardLayouts[currentAdmin.username] : null)};
+        var DASH_CSRF = '${getCsrfToken(req)}';
+        var _tsTimers = {};
 
-        function getHidden() { try { return JSON.parse(localStorage.getItem(STORAGE_KEY) || '[]'); } catch(e) { return []; } }
-        function setHidden(arr) { localStorage.setItem(STORAGE_KEY, JSON.stringify(arr)); }
+        // Server-Layout als initiale Quelle; ungültige Widget-IDs entfernen
+        if (SERVER_LAYOUT !== null) {
+            localStorage.setItem(DASH_KEY, JSON.stringify(
+                SERVER_LAYOUT.filter(function(id){ return CATALOG.some(function(c){ return c.id===id; }); })
+            ));
+        }
 
-        function applyWidgets() {
-            var hidden = getHidden();
-            document.querySelectorAll('.widget-card').forEach(function(el) {
-                var id = el.getAttribute('data-widget');
-                var always = el.getAttribute('data-always');
-                if (always) return;
-                el.style.display = hidden.includes(id) ? 'none' : '';
+        function getLayout() { try { return JSON.parse(localStorage.getItem(DASH_KEY)||'[]'); } catch(e){ return []; } }
+        function saveLayout(arr) {
+            localStorage.setItem(DASH_KEY, JSON.stringify(arr));
+            fetch('/admin/dashboard/save-layout', { method:'POST', headers:{'Content-Type':'application/x-www-form-urlencoded'}, body:'_csrf='+encodeURIComponent(DASH_CSRF)+'&layout='+encodeURIComponent(JSON.stringify(arr)) });
+        }
+
+        function getWidgetContent(id) {
+            var tmpl = document.getElementById('wt_' + id);
+            return tmpl ? tmpl.innerHTML : '';
+        }
+
+        function buildWidget(id) {
+            var meta = CATALOG.find(function(c){ return c.id === id; });
+            if (!meta) return null;
+            var el = document.createElement('div');
+            el.className = 'card dash-widget';
+            el.setAttribute('data-widget', id);
+            el.draggable = true;
+            el.innerHTML =
+                '<button class="w-remove" onclick="removeWidget(\''+id+'\')" title="Entfernen">✕</button>' +
+                '<div style="display:flex;align-items:center;gap:8px;margin-bottom:14px;">' +
+                  '<span style="font-size:18px;">'+meta.icon+'</span>' +
+                  '<h2 style="margin:0;font-size:15px;">'+meta.title+'</h2>' +
+                '</div>' +
+                getWidgetContent(id);
+            // drag events for reordering
+            el.addEventListener('dragstart', function(e){ e.dataTransfer.setData('text/plain', 'move:'+id); e.dataTransfer.effectAllowed='move'; });
+            el.addEventListener('dragover', function(e){ e.preventDefault(); el.classList.add('drag-over'); });
+            el.addEventListener('dragleave', function(){ el.classList.remove('drag-over'); });
+            el.addEventListener('drop', function(e){
+                e.preventDefault(); el.classList.remove('drag-over');
+                var data = e.dataTransfer.getData('text/plain');
+                var dragId = data.replace(/^(move:|add:)/,'');
+                if (dragId === id) return;
+                var layout = getLayout();
+                var fromIdx = layout.indexOf(dragId);
+                var toIdx   = layout.indexOf(id);
+                if (fromIdx === -1) { layout.splice(toIdx, 0, dragId); }
+                else { layout.splice(fromIdx,1); toIdx = layout.indexOf(id); layout.splice(toIdx,0,dragId); }
+                saveLayout(layout); renderDash();
             });
-            buildToggles();
+            return el;
         }
 
-        function hideWidget(id) {
-            var hidden = getHidden();
-            if (!hidden.includes(id)) hidden.push(id);
-            setHidden(hidden);
-            applyWidgets();
+        function renderDash() {
+            var grid = document.getElementById('dashGrid');
+            var empty = document.getElementById('dashEmpty');
+            var layout = getLayout();
+            grid.innerHTML = '';
+            layout.forEach(function(id){
+                var el = buildWidget(id);
+                if (el) grid.appendChild(el);
+            });
+            empty.style.display = layout.length === 0 ? 'block' : 'none';
+            buildCatalog();
+            refreshTerminalStatuses();
         }
 
-        function buildToggles() {
-            var hidden = getHidden();
-            var container = document.getElementById('widgetToggles');
-            if (!container) return;
-            container.innerHTML = WIDGET_IDS.map(function(w) {
-                var isVisible = !hidden.includes(w.id);
-                return '<label style="display:flex;align-items:center;gap:10px;cursor:pointer;font-size:14px;padding:8px 10px;border:1px solid var(--border);border-radius:6px;">' +
-                    '<input type="checkbox" ' + (isVisible ? 'checked' : '') + ' onchange="toggleWidget(\'' + w.id + '\',this.checked)" style="width:16px;height:16px;">' +
-                    w.title + '</label>';
-            }).join('');
+        function buildCatalog() {
+            var layout = getLayout();
+            var cat = document.getElementById('widgetCatalog');
+            if (!cat) return;
+            cat.innerHTML = '';
+            CATALOG.forEach(function(w){
+                var used = layout.includes(w.id);
+                var chip = document.createElement('div');
+                chip.className = 'catalog-chip' + (used ? ' used' : '');
+                chip.innerHTML = '<span style="font-size:16px;">'+w.icon+'</span><span>'+w.title+'</span>' + (used ? '<span style="margin-left:auto;font-size:11px;opacity:.5;">aktiv</span>' : '');
+                if (!used) {
+                    chip.draggable = true;
+                    chip.addEventListener('dragstart', function(e){ e.dataTransfer.setData('text/plain','add:'+w.id); e.dataTransfer.effectAllowed='copy'; });
+                    chip.addEventListener('click', function(){ addWidget(w.id); });
+                }
+                cat.appendChild(chip);
+            });
         }
 
-        function toggleWidget(id, show) {
-            var hidden = getHidden();
-            if (show) { hidden = hidden.filter(function(h) { return h !== id; }); }
-            else { if (!hidden.includes(id)) hidden.push(id); }
-            setHidden(hidden);
-            applyWidgets();
+        function addWidget(id) {
+            var layout = getLayout();
+            if (layout.includes(id)) return;
+            layout.push(id);
+            saveLayout(layout); renderDash();
         }
 
-        function resetWidgets() { setHidden([]); applyWidgets(); }
-
-        function openWidgetSettings() {
-            buildToggles();
-            document.getElementById('widgetOverlay').style.display = 'block';
-            document.getElementById('widgetPanel').style.display = 'block';
-        }
-        function closeWidgetSettings() {
-            document.getElementById('widgetOverlay').style.display = 'none';
-            document.getElementById('widgetPanel').style.display = 'none';
+        function removeWidget(id) {
+            var layout = getLayout().filter(function(x){ return x!==id; });
+            saveLayout(layout); renderDash();
         }
 
-        document.addEventListener('DOMContentLoaded', applyWidgets);
+        function clearDash() {
+            if (!confirm('Dashboard wirklich leeren?')) return;
+            saveLayout([]); renderDash();
+        }
+
+        // Drop on grid (from catalog)
+        var grid = document.getElementById('dashGrid');
+        grid.addEventListener('dragover', function(e){ e.preventDefault(); document.getElementById('dropIndicator').style.display='block'; });
+        grid.addEventListener('dragleave', function(e){ if(!grid.contains(e.relatedTarget)) document.getElementById('dropIndicator').style.display='none'; });
+        grid.addEventListener('drop', function(e){
+            e.preventDefault(); document.getElementById('dropIndicator').style.display='none';
+            var data = e.dataTransfer.getData('text/plain');
+            if (data.startsWith('add:')) addWidget(data.slice(4));
+        });
+
+        function openConfig() {
+            buildCatalog();
+            document.getElementById('configOverlay').style.display='block';
+            document.getElementById('configPanel').style.display='flex';
+        }
+        function closeConfig() {
+            document.getElementById('configOverlay').style.display='none';
+            document.getElementById('configPanel').style.display='none';
+        }
+
+        function fetchTerminalStatus(tid, row) {
+            fetch('/admin/terminals/status/' + encodeURIComponent(tid))
+                .then(function(r){ return r.json(); })
+                .then(function(data) {
+                    if (data.error || !data.device) return;
+                    var d = data.device;
+                    var battEl  = row.querySelector('.ts-batt');
+                    var wifiEl  = row.querySelector('.ts-wifi');
+                    var sleepEl = row.querySelector('.ts-sleep');
+                    if (battEl) battEl.textContent = '🔋 ' + (d.percent_charged != null ? Math.round(d.percent_charged) + '%' : '–');
+                    if (wifiEl)  wifiEl.textContent  = '📶 ' + (d.wifi_strength != null ? d.wifi_strength + '%' : '–');
+                    if (sleepEl) sleepEl.textContent = d.sleep_mode_enabled ? '😴 An' : '';
+                })
+                .catch(function(){});
+        }
+        function refreshTerminalStatuses() {
+            document.querySelectorAll('#dashGrid .term-live-row').forEach(function(row) {
+                var tid = row.getAttribute('data-tid');
+                if (!tid) return;
+                fetchTerminalStatus(tid, row);
+                var ms = parseInt(row.getAttribute('data-interval') || '30', 10) * 60 * 1000;
+                if (_tsTimers[tid]) clearInterval(_tsTimers[tid]);
+                _tsTimers[tid] = setInterval(function() {
+                    var activeRow = document.querySelector('#dashGrid .term-live-row[data-tid="' + tid + '"]');
+                    if (activeRow) fetchTerminalStatus(tid, activeRow);
+                    else { clearInterval(_tsTimers[tid]); delete _tsTimers[tid]; }
+                }, ms);
+            });
+        }
+
+        document.addEventListener('DOMContentLoaded', renderDash);
         </script>
     `;
 
     res.send(renderAdminLayout(req, 'Dashboard', content));
+});
+
+app.post('/admin/dashboard/save-layout', requireAdmin, requirePermission('dashboard.view'), requireCsrf, (req, res) => {
+    try {
+        const admin = getCurrentAdmin(req);
+        let layout = [];
+        try { layout = JSON.parse(String(req.body.layout || '[]')); } catch(e) { layout = []; }
+        if (!Array.isArray(layout)) layout = [];
+        layout = layout.filter(id => typeof id === 'string' && id.length < 64);
+        dashboardLayouts[admin.username] = layout;
+        saveDashboardLayouts();
+        return res.json({ ok: true });
+    } catch(err) {
+        return res.status(500).json({ error: err.message });
+    }
 });
 
 /*
@@ -3773,6 +3835,28 @@ app.post('/admin/device-status', requireAdmin, requirePermission('terminals.view
     }
 });
 
+// GET endpoint for live status — used by dashboard widget + terminals page auto-refresh
+app.get('/admin/terminals/status/:terminalId', requireAdmin, requirePermission('terminals.view'), async (req, res) => {
+    const terminalId = String(req.params.terminalId || '').trim();
+    const terminal = getTerminal(terminalId);
+    if (!terminal) return res.status(404).json({ error: 'Terminal nicht gefunden' });
+    if (!terminal.trmnlDeviceApiKey || !terminal.trmnlDeviceMac) return res.status(400).json({ error: 'Kein API Key / MAC konfiguriert' });
+    try {
+        const headers = { 'Authorization': `Bearer ${decryptValue(terminal.trmnlDeviceApiKey)}`, 'Content-Type': 'application/json' };
+        const listRes = await fetch('https://usetrmnl.com/api/devices', { headers });
+        if (!listRes.ok) return res.json({ error: `TRMNL Fehler: ${listRes.status}` });
+        const list = await listRes.json();
+        const devices = list.data || list.devices || list;
+        const device = Array.isArray(devices)
+            ? devices.find(d => (d.mac_address || '').toUpperCase() === terminal.trmnlDeviceMac.toUpperCase())
+            : null;
+        if (!device) return res.json({ error: 'Gerät nicht gefunden' });
+        return res.json({ device });
+    } catch (err) {
+        return res.json({ error: err.message });
+    }
+});
+
 app.post('/admin/save-sleep-schedule', requireAdmin, requirePermission('terminals.edit'), requireCsrf, async (req, res) => {
     const terminalId = String(req.body.terminalId || '').trim();
     const terminal = getTerminal(terminalId);
@@ -3854,6 +3938,7 @@ app.get('/admin/terminals', requireAdmin, requirePermission('terminals.view'), (
                     <div>
                         <div style="font-size:15px;font-weight:600;">${escapeHtml(t.name)}</div>
                         <div style="font-size:12px;opacity:.5;margin-top:2px;">${assignedText}</div>
+                        ${(t.trmnlDeviceApiKey && t.trmnlDeviceMac) ? `<div id="termHeaderStatus_${escapeHtml(t.id)}" style="font-size:11px;opacity:.55;margin-top:3px;"></div>` : ''}
                     </div>
                 </div>
                 <span style="font-size:11px;padding:3px 10px;border-radius:999px;background:${modeColor}20;color:${modeColor};font-weight:600;">${escapeHtml(t.trmnlMode || 'none')}</span>
@@ -3899,6 +3984,11 @@ app.get('/admin/terminals', requireAdmin, requirePermission('terminals.view'), (
                     <input type="password" id="trmnlMac_${escapeHtml(t.id)}" name="trmnlDeviceMac" value="${escapeHtml(t.trmnlDeviceMac || '')}" placeholder="z. B. 08:92:72:65:F8:9C" autocomplete="off">
                     <button type="button" class="eye-btn" data-eye="trmnlMac_${escapeHtml(t.id)}" onclick="toggleVis('trmnlMac_${escapeHtml(t.id)}')">&#128065;</button>
                 </div>
+
+                <label>Status Aktualisierungsintervall</label>
+                <select name="statusRefreshInterval">
+                    ${[15,30,45,60,120,240,480].map(v=>`<option value="${v}" ${(t.statusRefreshInterval||30)===v?'selected':''}>${v<60?v+' Min':v/60+(v/60===1?' Std':' Std')}</option>`).join('')}
+                </select>
 
                 <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:8px;">
                     <button type="submit">Terminal speichern</button>
@@ -4042,6 +4132,34 @@ app.get('/admin/terminals', requireAdmin, requirePermission('terminals.view'), (
             } catch(e) { statusEl.innerHTML='Fehler: '+e.message; }
         }
         function mtt(min) { if(min==null)return'–'; return String(Math.floor(min/60)).padStart(2,'0')+':'+String(min%60).padStart(2,'0'); }
+
+        // --- Auto-Status für Terminal-Header ---
+        var _pageStatusTimers = {};
+        async function loadHeaderStatus(tid) {
+            var el = document.getElementById('termHeaderStatus_' + tid);
+            if (!el) return;
+            try {
+                var r = await fetch('/admin/terminals/status/' + encodeURIComponent(tid));
+                var data = await r.json();
+                if (data.error || !data.device) { el.textContent = ''; return; }
+                var d = data.device;
+                var parts = [];
+                if (d.percent_charged != null) parts.push('🔋 ' + Math.round(d.percent_charged) + '%');
+                if (d.wifi_strength != null)    parts.push('📶 ' + d.wifi_strength + '%');
+                if (d.sleep_mode_enabled)       parts.push('😴 An');
+                el.textContent = parts.join('  ');
+            } catch(e) { el.textContent = ''; }
+        }
+        function setupTerminalAutoRefresh(tid, intervalMin) {
+            loadHeaderStatus(tid);
+            if (_pageStatusTimers[tid]) clearInterval(_pageStatusTimers[tid]);
+            _pageStatusTimers[tid] = setInterval(function(){ loadHeaderStatus(tid); }, intervalMin * 60 * 1000);
+        }
+        document.addEventListener('DOMContentLoaded', function() {
+            ${Object.values(terminals).filter(t => t.trmnlDeviceApiKey && t.trmnlDeviceMac).map(t =>
+                `setupTerminalAutoRefresh('${escapeHtml(t.id)}', ${t.statusRefreshInterval || 30});`
+            ).join('\n            ')}
+        });
     </script>`;
 
     res.send(renderAdminLayout(req, 'Terminals', content));
@@ -4052,7 +4170,7 @@ app.post('/admin/terminals/create', requireAdmin, requirePermission('terminals.c
         const name = String(req.body.name || '').trim();
         if (!name) return res.status(400).send('Name fehlt');
         const id = 'terminal_' + Date.now();
-        terminals[id] = { id, name, trmnlMode: 'none', trmnlWebhookUrl: '', trmnlDeviceApiKey: '', trmnlDeviceMac: '', trmnlSleepStart: '19:00', trmnlSleepEnd: '07:00' };
+        terminals[id] = { id, name, trmnlMode: 'none', trmnlWebhookUrl: '', trmnlDeviceApiKey: '', trmnlDeviceMac: '', trmnlSleepStart: '19:00', trmnlSleepEnd: '07:00', statusRefreshInterval: 30 };
         saveTerminals();
         return res.redirect('/admin/terminals');
     } catch (err) {
@@ -4071,6 +4189,8 @@ app.post('/admin/terminals/update', requireAdmin, requirePermission('terminals.e
         const rawApiKey = String(req.body.trmnlDeviceApiKey || '').trim();
         terminal.trmnlDeviceApiKey = rawApiKey ? encryptValue(rawApiKey) : (terminal.trmnlDeviceApiKey || '');
         terminal.trmnlDeviceMac = String(req.body.trmnlDeviceMac || '').trim();
+        const ivl = parseInt(req.body.statusRefreshInterval, 10);
+        terminal.statusRefreshInterval = [15, 30, 45, 60, 120, 240, 480].includes(ivl) ? ivl : 30;
         saveTerminals();
         return res.redirect('/admin/terminals');
     } catch (err) {
