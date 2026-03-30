@@ -3535,7 +3535,7 @@ app.post('/admin/save-sleep-schedule', requireAdmin, requirePermission('rooms.ed
     if (!room.trmnlDeviceApiKey || !room.trmnlDeviceMac) return res.status(400).json({ error: 'Device API Key und MAC-Adresse fehlen' });
 
     try {
-        const headers = { 'Access-Token': room.trmnlDeviceApiKey, 'Content-Type': 'application/json' };
+        const headers = { 'Authorization': `Bearer ${room.trmnlDeviceApiKey}`, 'Content-Type': 'application/json' };
 
         // Gerät per MAC finden
         const listRes = await fetch('https://usetrmnl.com/api/devices', { headers });
