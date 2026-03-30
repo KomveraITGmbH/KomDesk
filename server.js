@@ -1519,8 +1519,10 @@ function renderAdminLayout(req, title, content) {
                         headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
                         body: new URLSearchParams(fd).toString()
                     });
-                    var data = await r.json();
-                    resultEl.textContent = JSON.stringify(data, null, 2);
+                    var text = await r.text();
+                    var data;
+                    try { data = JSON.parse(text); } catch(e) { data = text; }
+                    resultEl.textContent = typeof data === 'string' ? data : JSON.stringify(data, null, 2);
                 } catch(e) {
                     resultEl.textContent = 'Fehler: ' + e.message;
                 }
@@ -3321,7 +3323,7 @@ app.get('/admin/rooms', requireAdmin, requirePermission('rooms.view'), (req, res
                         </form>
 
                         <form id="trmnlTestForm_${escapeHtml(room.id)}" style="margin-top:8px;">
-                            <input type="hidden" name="_csrf" value="${req.csrfToken ? req.csrfToken() : ''}">
+                            <input type="hidden" name="_csrf" value="${getCsrfToken(req)}">
                             <input type="hidden" name="roomId" value="${escapeHtml(room.id)}">
                             <button type="button" onclick="testTrmnlPush('${escapeHtml(room.id)}')" style="background:#6b7280;">TRMNL Push testen</button>
                         </form>
