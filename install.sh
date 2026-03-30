@@ -83,7 +83,14 @@ echo ""
 # ──────────────────────────────────────────────
 echo "==> System wird vorbereitet..."
 sudo apt update
-sudo apt install -y curl ca-certificates gnupg git
+sudo apt install -y curl ca-certificates gnupg git ufw
+
+echo "==> Firewall (UFW) wird konfiguriert..."
+sudo ufw allow 80/tcp
+sudo ufw allow 443/tcp
+sudo ufw allow 3000/tcp
+sudo ufw allow OpenSSH
+sudo ufw --force enable
 
 if ! command -v node >/dev/null 2>&1; then
     echo "==> Node.js wird installiert..."
