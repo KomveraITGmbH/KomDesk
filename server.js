@@ -3034,7 +3034,10 @@ app.post('/admin/login', loginLimiter, requireCsrf, async (req, res) => {
             if (err) return res.status(500).send('Login fehlgeschlagen');
             req.session.adminAuthenticated = true;
             req.session.adminUsername = admin.username;
-            return res.redirect('/admin');
+            req.session.save((saveErr) => {
+                if (saveErr) return res.status(500).send('Login fehlgeschlagen');
+                return res.redirect('/admin');
+            });
         });
     } catch (err) {
         console.error(err);
