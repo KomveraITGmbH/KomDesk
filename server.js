@@ -1905,7 +1905,7 @@ app.get('/', (req, res) => {
             const occupied = seat.name && seat.name !== 'Frei';
             return `
                 <a href="/${encodeURIComponent(room.id)}/sit/${num}" class="seat-pill ${occupied ? 'seat-pill-occ' : ''}">
-                    Platz ${num}${occupied ? ` – ${escapeHtml(seat.name)}` : ' – Frei'}
+                    ${L.rooms?.seat || 'Seat'} ${num}${occupied ? ` – ${escapeHtml(seat.name)}` : ` – ${L.dashboard?.free || 'Free'}`}
                 </a>
             `;
         }).join('');
@@ -2817,6 +2817,7 @@ app.get('/admin/login', (req, res) => {
         return res.redirect('/admin/setup');
     }
 
+    const L = loadLocale();
     getCsrfToken(req);
     req.session.save(() => {
     const logoExists = fs.existsSync(LOGO_FILE);
@@ -2828,7 +2829,9 @@ app.get('/admin/login', (req, res) => {
         <head>
             <meta charset="UTF-8">
             <meta name="viewport" content="width=device-width, initial-scale=1.0">
-            <title>Admin Login – DeskView</title>
+            <title>${escapeHtml(L.login?.title || 'Admin Login')} – DeskView</title>
+            <script>window._LOCALE=${JSON.stringify(L)};</script>
+            <script>(function(){var L=window._LOCALE||{};function t(k){return k.split('.').reduce(function(o,p){return o&&o[p]},L)||k;}document.addEventListener('DOMContentLoaded',function(){document.querySelectorAll('[data-i18n]').forEach(function(el){var v=t(el.getAttribute('data-i18n'));if(v!==el.getAttribute('data-i18n'))el.textContent=v;});document.querySelectorAll('[data-i18n-placeholder]').forEach(function(el){var v=t(el.getAttribute('data-i18n-placeholder'));if(v!==el.getAttribute('data-i18n-placeholder'))el.placeholder=v;});});})();</script>
             <style>
                 * { box-sizing: border-box; margin: 0; padding: 0; }
                 :root {
@@ -3761,10 +3764,13 @@ RÄUME
 app.get('/admin/rooms', requireAdmin, requirePermission('rooms.view'), (req, res) => {
     const L = loadLocale();
     const roomCards = Object.values(rooms).map((room) => {
-        const seatRows = room.seats.map((seat, index) => `
+        const seatRows = room.seats.map((seat, index) => {
+            const isFree = !seat.name || seat.name === 'Frei';
+            const displayName = isFree ? (L.dashboard?.free || 'Free') : escapeHtml(seat.name);
+            return `
             <tr>
-                <td>Platz ${index + 1}</td>
-                <td>${escapeHtml(seat.name)}</td>
+                <td>${escapeHtml(L.rooms?.seat || 'Seat')} ${index + 1}</td>
+                <td>${displayName}</td>
                 <td>${escapeHtml(seat.title)}</td>
                 <td>
                     ${
@@ -3781,7 +3787,8 @@ app.get('/admin/rooms', requireAdmin, requirePermission('rooms.view'), (req, res
                     }
                 </td>
             </tr>
-        `).join('');
+        `;
+        }).join('');
 
         const freeSeats = room.seats.filter(s => !s.name || s.name === 'Frei').length;
         const roomIdSafe = escapeHtml(room.id).replace(/[^a-zA-Z0-9_-]/g, '_');
@@ -3794,7 +3801,7 @@ app.get('/admin/rooms', requireAdmin, requirePermission('rooms.view'), (req, res
                         <span style="font-weight:700;font-size:15px;">${escapeHtml(room.id)} – ${escapeHtml(room.abteilung)}</span>
                         <span style="opacity:.55;font-size:13px;">${escapeHtml(room.roomnumber)}</span>
                     </div>
-                    <span style="font-size:12px;opacity:.6;">${freeSeats} / ${room.seats.length} frei</span>
+                    <span style="font-size:12px;opacity:.6;">${freeSeats} / ${room.seats.length} ${L.dashboard?.free || 'Free'}</span>
                 </div>
 
                 <div id="roomBody_${roomIdSafe}" style="display:none;padding:0 20px 20px 20px;border-top:1px solid var(--border);">
@@ -3868,7 +3875,7 @@ app.get('/admin/rooms', requireAdmin, requirePermission('rooms.view'), (req, res
                                     <button type="submit" class="btn-danger" data-i18n="rooms.removeLastSeat">− Letzten Platz entfernen</button>
                                 </form>
                                 ` : ''}
-                                <span class="muted" style="font-size:13px;">${room.seats.length} Platz${room.seats.length !== 1 ? 'plätze' : ''}</span>
+                                <span class="muted" style="font-size:13px;">${room.seats.length} ${room.seats.length !== 1 ? (L.rooms?.seats || 'Seats') : (L.rooms?.seat || 'Seat')}</span>
                             </div>
                             `
                             : ''
