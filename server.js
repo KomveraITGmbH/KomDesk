@@ -2498,9 +2498,15 @@ app.get('/admin/setup', (req, res) => {
                             <label>Anzeigename <span class="optional-tag">optional</span></label>
                             <input type="text" name="displayName" placeholder="z. B. Max Mustermann">
                             <label>Passwort</label>
-                            <input type="password" name="password" placeholder="Mindestens 8 Zeichen" required>
-                            <label>Passwort wiederholen</label>
-                            <input type="password" name="confirmPassword" placeholder="Passwort bestätigen" required>
+                            <input type="password" name="password" id="setup_pw" placeholder="Mindestens 8 Zeichen" required oninput="checkPw()">
+                            <div id="pw_hints" style="margin-top:6px;font-size:12px;line-height:1.8;display:none;">
+                                <div id="ph_len"  style="color:var(--muted);">✗ Mindestens 8 Zeichen</div>
+                                <div id="ph_upper" style="color:var(--muted);">✗ Mindestens ein Großbuchstabe</div>
+                                <div id="ph_num"  style="color:var(--muted);">✗ Mindestens eine Zahl</div>
+                            </div>
+                            <label style="margin-top:10px;">Passwort wiederholen</label>
+                            <input type="password" name="confirmPassword" id="setup_pw2" placeholder="Passwort bestätigen" required oninput="checkMatch()">
+                            <div id="pw_match_err" style="color:#dc2626;font-size:12px;margin-top:4px;display:none;">✗ Passwörter stimmen nicht überein</div>
                         </div>
 
                         <div class="card">
@@ -2534,7 +2540,8 @@ app.get('/admin/setup', (req, res) => {
                         </div>
                     </div>
 
-                    <button type="submit" class="submit-btn">Ersteinrichtung abschließen &#8594;</button>
+                    <div id="form_err" style="color:#dc2626;font-size:13px;font-weight:600;margin-bottom:8px;display:none;"></div>
+                    <button type="submit" class="submit-btn" onclick="return validateSetup()">Ersteinrichtung abschließen &#8594;</button>
                 </form>
 
                 <div class="support-footer">
@@ -2550,6 +2557,39 @@ app.get('/admin/setup', (req, res) => {
                     var next = current === 'dark' ? 'light' : 'dark';
                     document.documentElement.setAttribute('data-theme', next);
                     localStorage.setItem('deskview-theme', next);
+                }
+                function checkPw() {
+                    var pw = document.getElementById('setup_pw').value;
+                    var hints = document.getElementById('pw_hints');
+                    if (!pw) { hints.style.display = 'none'; return; }
+                    hints.style.display = '';
+                    function setHint(id, ok, msg) {
+                        var el = document.getElementById(id);
+                        el.textContent = (ok ? '\u2713 ' : '\u2717 ') + msg;
+                        el.style.color = ok ? '#16a34a' : '#dc2626';
+                    }
+                    setHint('ph_len',   pw.length >= 8,   'Mindestens 8 Zeichen');
+                    setHint('ph_upper', /[A-Z]/.test(pw), 'Mindestens ein Gro\u00dfbuchstabe');
+                    setHint('ph_num',   /[0-9]/.test(pw), 'Mindestens eine Zahl');
+                    checkMatch();
+                }
+                function checkMatch() {
+                    var pw  = document.getElementById('setup_pw').value;
+                    var pw2 = document.getElementById('setup_pw2').value;
+                    var err = document.getElementById('pw_match_err');
+                    if (pw2 && pw !== pw2) { err.style.display = ''; }
+                    else { err.style.display = 'none'; }
+                }
+                function validateSetup() {
+                    var pw  = document.getElementById('setup_pw').value;
+                    var pw2 = document.getElementById('setup_pw2').value;
+                    var err = document.getElementById('form_err');
+                    if (pw.length < 8)        { err.textContent = '\u2717 Das Passwort muss mindestens 8 Zeichen lang sein.'; err.style.display = ''; return false; }
+                    if (!/[A-Z]/.test(pw))    { err.textContent = '\u2717 Das Passwort muss mindestens einen Gro\u00dfbuchstaben enthalten.'; err.style.display = ''; return false; }
+                    if (!/[0-9]/.test(pw))    { err.textContent = '\u2717 Das Passwort muss mindestens eine Zahl enthalten.'; err.style.display = ''; return false; }
+                    if (pw !== pw2)           { err.textContent = '\u2717 Die Passw\u00f6rter stimmen nicht \u00fcberein.'; err.style.display = ''; return false; }
+                    err.style.display = 'none';
+                    return true;
                 }
             </script>
         </body>
