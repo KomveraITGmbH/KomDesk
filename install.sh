@@ -8,22 +8,131 @@ NODE_MAJOR="20"
 NGINX_CONF="/etc/nginx/sites-available/${SERVICE_NAME}"
 
 # ──────────────────────────────────────────────
+# Sprachauswahl / Language selection
+# ──────────────────────────────────────────────
+echo ""
+echo "╔══════════════════════════════════════════╗"
+echo "║         Sprache / Language               ║"
+echo "╠══════════════════════════════════════════╣"
+echo "║  1) Deutsch                              ║"
+echo "║  2) English                              ║"
+echo "╚══════════════════════════════════════════╝"
+echo ""
+
+exec < /dev/tty
+read -r -p "Auswahl / Select [1/2]: " LANG_CHOICE
+
+if [[ "$LANG_CHOICE" == "2" ]]; then
+    # ── English strings ──
+    MSG_CHECK_SYS="==> Checking system..."
+    MSG_DETECTED="Detected system"
+    MSG_UNSUPPORTED="Unsupported Linux system."
+    MSG_ONLY_DEBIAN="This script only supports Ubuntu, Debian and Raspberry Pi OS."
+    MSG_HTTPS_TITLE="║         HTTPS / SSL Setup                ║"
+    MSG_HTTPS_Q="Do you want to set up HTTPS with nginx + Let's Encrypt?"
+    MSG_HTTPS_REQ1="  → Requirement: A domain with an A-Record pointing to this server"
+    MSG_HTTPS_REQ2="  → Ports 80 and 443 must be forwarded from your router to this server"
+    MSG_HTTPS_REQ3="  → Without HTTPS the app runs via HTTP on port 80"
+    MSG_HTTPS_PROMPT="Set up HTTPS? [y/N]: "
+    MSG_HTTPS_YES_REGEX="^[yYjJ]$"
+    MSG_DOMAIN_PROMPT="Enter domain (e.g. deskview.example.com): "
+    MSG_NO_DOMAIN="No domain entered – continuing with HTTP."
+    MSG_EMAIL_PROMPT="E-Mail for Let's Encrypt: "
+    MSG_NO_EMAIL="No e-mail entered – continuing with HTTP."
+    MSG_HTTP_FALLBACK="  → Continuing with HTTP."
+    MSG_DOMAIN_LBL="  Domain"
+    MSG_EMAIL_LBL="  E-Mail"
+    MSG_HTTPS_LBL="  HTTPS"
+    MSG_HTTPS_VAL="will be configured"
+    MSG_CLEANUP="==> Cleaning up previous installation..."
+    MSG_PACKAGES="==> Installing packages..."
+    MSG_FIREWALL="==> Configuring firewall..."
+    MSG_NODE_INSTALL="==> Installing Node.js ${NODE_MAJOR}..."
+    MSG_APP_INSTALL="==> Installing application to"
+    MSG_UPDATE="==> Updating existing installation..."
+    MSG_CLONE="==> Cloning repository..."
+    MSG_NPM="==> Running npm install..."
+    MSG_NGINX="==> Configuring nginx..."
+    MSG_SERVICE="==> Creating systemd service..."
+    MSG_SUDOERS="==> Creating sudoers entry..."
+    MSG_SUDOERS_OK="==> sudoers OK"
+    MSG_SUDOERS_WARN="==> WARNING: sudoers syntax error, removing"
+    MSG_CERTBOT_INSTALL="==> Installing Certbot..."
+    MSG_CERTBOT_CLEAN="==> Cleaning up old certificate configuration..."
+    MSG_CERTBOT_REQ="==> Requesting SSL certificate (via nginx)..."
+    MSG_CERT_OK="✅ Certificate obtained"
+    MSG_SVC_START="==> Starting service..."
+    MSG_SVC_OK="✅ Service is running"
+    MSG_SVC_FAIL="❌ Service could not be started. Logs:"
+    MSG_DONE_TITLE="║          ✅ Installation complete        ║"
+    MSG_REACH="   App available at"
+    MSG_UPDATE_CMD="Update:"
+    MSG_LOGS_CMD="Logs:"
+else
+    # ── Deutsche strings ──
+    MSG_CHECK_SYS="==> Prüfe System..."
+    MSG_DETECTED="Erkanntes System"
+    MSG_UNSUPPORTED="Nicht unterstütztes Linux-System."
+    MSG_ONLY_DEBIAN="Dieses Script unterstützt nur Ubuntu, Debian und Raspberry Pi OS."
+    MSG_HTTPS_TITLE="║         HTTPS / SSL Einrichtung          ║"
+    MSG_HTTPS_Q="Möchtest du HTTPS mit nginx + Let's Encrypt einrichten?"
+    MSG_HTTPS_REQ1="  → Voraussetzung: Eine Domain mit A-Record auf diesen Server"
+    MSG_HTTPS_REQ2="  → Port 80 und 443 müssen vom Router auf diesen Server weitergeleitet sein"
+    MSG_HTTPS_REQ3="  → Ohne HTTPS läuft die App über HTTP auf Port 80"
+    MSG_HTTPS_PROMPT="HTTPS einrichten? [j/N]: "
+    MSG_HTTPS_YES_REGEX="^[jJyY]$"
+    MSG_DOMAIN_PROMPT="Domain eingeben (z.B. deskview.example.com): "
+    MSG_NO_DOMAIN="Keine Domain eingegeben – weiter mit HTTP."
+    MSG_EMAIL_PROMPT="E-Mail für Let's Encrypt: "
+    MSG_NO_EMAIL="Keine E-Mail eingegeben – weiter mit HTTP."
+    MSG_HTTP_FALLBACK="  → Weiter mit HTTP."
+    MSG_DOMAIN_LBL="  Domain"
+    MSG_EMAIL_LBL="  E-Mail"
+    MSG_HTTPS_LBL="  HTTPS"
+    MSG_HTTPS_VAL="wird eingerichtet"
+    MSG_CLEANUP="==> Vorherige Installation wird bereinigt..."
+    MSG_PACKAGES="==> Pakete werden installiert..."
+    MSG_FIREWALL="==> Firewall wird konfiguriert..."
+    MSG_NODE_INSTALL="==> Node.js ${NODE_MAJOR} wird installiert..."
+    MSG_APP_INSTALL="==> Installiere Anwendung nach"
+    MSG_UPDATE="==> Update wird durchgeführt..."
+    MSG_CLONE="==> Repo wird geklont..."
+    MSG_NPM="==> npm install läuft..."
+    MSG_NGINX="==> nginx wird konfiguriert..."
+    MSG_SERVICE="==> systemd Service wird erstellt..."
+    MSG_SUDOERS="==> sudoers Eintrag wird erstellt..."
+    MSG_SUDOERS_OK="==> sudoers OK"
+    MSG_SUDOERS_WARN="==> WARNUNG: sudoers Syntax-Fehler, wird entfernt"
+    MSG_CERTBOT_INSTALL="==> Certbot wird installiert..."
+    MSG_CERTBOT_CLEAN="==> Alte Zertifikatskonfiguration bereinigen..."
+    MSG_CERTBOT_REQ="==> SSL-Zertifikat wird beantragt (via nginx)..."
+    MSG_CERT_OK="✅ Zertifikat erhalten"
+    MSG_SVC_START="==> Service wird gestartet..."
+    MSG_SVC_OK="✅ Service läuft"
+    MSG_SVC_FAIL="❌ Service konnte nicht gestartet werden. Logs:"
+    MSG_DONE_TITLE="║          ✅ Installation fertig          ║"
+    MSG_REACH="   App erreichbar unter"
+    MSG_UPDATE_CMD="Update:"
+    MSG_LOGS_CMD="Logs:"
+fi
+
+# ──────────────────────────────────────────────
 # System prüfen
 # ──────────────────────────────────────────────
-echo "==> Prüfe System..."
+echo "$MSG_CHECK_SYS"
 
 if [ ! -f /etc/os-release ]; then
-    echo "Nicht unterstütztes Linux-System."
+    echo "$MSG_UNSUPPORTED"
     exit 1
 fi
 
 . /etc/os-release
-echo "Erkanntes System: $PRETTY_NAME"
+echo "$MSG_DETECTED: $PRETTY_NAME"
 
 case "$ID" in
     ubuntu|debian|raspbian) ;;
     *)
-        echo "Dieses Script unterstützt nur Ubuntu, Debian und Raspberry Pi OS."
+        echo "$MSG_ONLY_DEBIAN"
         exit 1
         ;;
 esac
@@ -33,63 +142,78 @@ esac
 # ──────────────────────────────────────────────
 echo ""
 echo "╔══════════════════════════════════════════╗"
-echo "║         HTTPS / SSL Einrichtung          ║"
+echo "$MSG_HTTPS_TITLE"
 echo "╚══════════════════════════════════════════╝"
 echo ""
-echo "Möchtest du HTTPS mit nginx + Let's Encrypt einrichten?"
-echo "  → Voraussetzung: Eine Domain mit A-Record auf diesen Server"
-echo "  → Port 80 und 443 müssen vom Router auf diesen Server weitergeleitet sein"
-echo "  → Ohne HTTPS läuft die App über HTTP auf Port 80"
+echo "$MSG_HTTPS_Q"
+echo "$MSG_HTTPS_REQ1"
+echo "$MSG_HTTPS_REQ2"
+echo "$MSG_HTTPS_REQ3"
 echo ""
 
 HTTPS_ENABLED=false
 DOMAIN=""
 LE_EMAIL=""
 
-exec < /dev/tty
+read -r -p "$MSG_HTTPS_PROMPT" HTTPS_CHOICE
 
-read -r -p "HTTPS einrichten? [j/N]: " HTTPS_CHOICE
-
-if [[ "$HTTPS_CHOICE" =~ ^[jJyY]$ ]]; then
+if [[ "$HTTPS_CHOICE" =~ $MSG_HTTPS_YES_REGEX ]]; then
     echo ""
-    read -r -p "Domain eingeben (z.B. deskview.example.com): " DOMAIN
+    read -r -p "$MSG_DOMAIN_PROMPT" DOMAIN
     DOMAIN="${DOMAIN// /}"
 
     if [ -z "$DOMAIN" ]; then
-        echo "Keine Domain eingegeben – weiter mit HTTP."
+        echo "$MSG_NO_DOMAIN"
     else
         echo ""
-        read -r -p "E-Mail für Let's Encrypt: " LE_EMAIL
+        read -r -p "$MSG_EMAIL_PROMPT" LE_EMAIL
         LE_EMAIL="${LE_EMAIL// /}"
 
         if [ -z "$LE_EMAIL" ]; then
-            echo "Keine E-Mail eingegeben – weiter mit HTTP."
+            echo "$MSG_NO_EMAIL"
             DOMAIN=""
         else
             HTTPS_ENABLED=true
             echo ""
-            echo "  Domain : $DOMAIN"
-            echo "  E-Mail : $LE_EMAIL"
-            echo "  HTTPS  : wird eingerichtet"
+            echo "$MSG_DOMAIN_LBL : $DOMAIN"
+            echo "$MSG_EMAIL_LBL  : $LE_EMAIL"
+            echo "$MSG_HTTPS_LBL  : $MSG_HTTPS_VAL"
         fi
     fi
 else
-    echo "  → Weiter mit HTTP."
+    echo "$MSG_HTTP_FALLBACK"
 fi
 
 echo ""
 
 # ──────────────────────────────────────────────
+# Vorherige Installation bereinigen
+# ──────────────────────────────────────────────
+echo "$MSG_CLEANUP"
+sudo systemctl stop ${SERVICE_NAME} 2>/dev/null || true
+sudo systemctl disable ${SERVICE_NAME} 2>/dev/null || true
+sudo rm -f /etc/systemd/system/${SERVICE_NAME}.service
+sudo systemctl stop apache2 2>/dev/null || true
+sudo systemctl disable apache2 2>/dev/null || true
+sudo apt-get remove --purge -y apache2 apache2-bin apache2-data apache2-utils 2>/dev/null || true
+sudo rm -rf /etc/apache2 2>/dev/null || true
+sudo systemctl stop nginx 2>/dev/null || true
+sudo rm -f /etc/nginx/sites-enabled/${SERVICE_NAME}
+sudo rm -f /etc/nginx/sites-available/${SERVICE_NAME}
+sudo systemctl daemon-reload
+sudo apt-get autoremove -y 2>/dev/null || true
+
+# ──────────────────────────────────────────────
 # Pakete installieren
 # ──────────────────────────────────────────────
-echo "==> Pakete werden installiert..."
+echo "$MSG_PACKAGES"
 sudo apt-get update -qq
 sudo apt-get install -y curl ca-certificates gnupg git ufw nginx
 
 # ──────────────────────────────────────────────
 # Firewall konfigurieren
 # ──────────────────────────────────────────────
-echo "==> Firewall wird konfiguriert..."
+echo "$MSG_FIREWALL"
 sudo ufw allow OpenSSH
 sudo ufw allow 'Nginx Full'
 sudo ufw --force enable
@@ -106,7 +230,7 @@ if command -v node >/dev/null 2>&1; then
 fi
 
 if [ "$NODE_OK" = false ]; then
-    echo "==> Node.js ${NODE_MAJOR} wird installiert..."
+    echo "$MSG_NODE_INSTALL"
     curl -fsSL https://deb.nodesource.com/setup_${NODE_MAJOR}.x | sudo -E bash -
     sudo apt-get install -y nodejs
 fi
@@ -116,28 +240,28 @@ echo "==> Node $(node -v) / npm $(npm -v)"
 # ──────────────────────────────────────────────
 # App installieren
 # ──────────────────────────────────────────────
-echo "==> Installiere Anwendung nach $APP_DIR..."
+echo "$MSG_APP_INSTALL $APP_DIR..."
 sudo mkdir -p "$APP_DIR"
 sudo chown -R "$USER:$USER" "$APP_DIR"
 
 if [ -d "$APP_DIR/.git" ]; then
-    echo "==> Update wird durchgeführt..."
+    echo "$MSG_UPDATE"
     git -C "$APP_DIR" pull
 else
-    echo "==> Repo wird geklont..."
+    echo "$MSG_CLONE"
     git clone "$GIT_REPO" "$APP_DIR"
 fi
 
 cd "$APP_DIR"
 mkdir -p public
 
-echo "==> npm install läuft..."
+echo "$MSG_NPM"
 npm install --omit=dev
 
 # ──────────────────────────────────────────────
 # nginx konfigurieren
 # ──────────────────────────────────────────────
-echo "==> nginx wird konfiguriert..."
+echo "$MSG_NGINX"
 
 if [ "$HTTPS_ENABLED" = true ]; then
     SERVER_NAME="$DOMAIN"
@@ -172,7 +296,7 @@ sudo systemctl restart nginx
 # ──────────────────────────────────────────────
 # systemd Service
 # ──────────────────────────────────────────────
-echo "==> systemd Service wird erstellt..."
+echo "$MSG_SERVICE"
 
 sudo tee /etc/systemd/system/${SERVICE_NAME}.service > /dev/null <<EOF
 [Unit]
@@ -198,7 +322,7 @@ sudo systemctl enable ${SERVICE_NAME}
 # ──────────────────────────────────────────────
 # sudoers
 # ──────────────────────────────────────────────
-echo "==> sudoers Eintrag wird erstellt..."
+echo "$MSG_SUDOERS"
 SYSTEMCTL_BIN=$(readlink -f "$(which systemctl)")
 SUDOERS_FILE="/etc/sudoers.d/${SERVICE_NAME}"
 sudo tee "$SUDOERS_FILE" > /dev/null <<EOF
@@ -210,9 +334,9 @@ ${USER} ALL=(ALL) NOPASSWD: ${SYSTEMCTL_BIN} reboot
 EOF
 sudo chmod 440 "$SUDOERS_FILE"
 if sudo visudo -cf "$SUDOERS_FILE"; then
-    echo "==> sudoers OK"
+    echo "$MSG_SUDOERS_OK"
 else
-    echo "==> WARNUNG: sudoers Syntax-Fehler, wird entfernt"
+    echo "$MSG_SUDOERS_WARN"
     sudo rm -f "$SUDOERS_FILE"
 fi
 
@@ -221,13 +345,13 @@ fi
 # ──────────────────────────────────────────────
 if [ "$HTTPS_ENABLED" = true ]; then
     echo ""
-    echo "==> Certbot wird installiert..."
+    echo "$MSG_CERTBOT_INSTALL"
     sudo apt-get install -y certbot python3-certbot-nginx
 
-    echo "==> Alte Zertifikatskonfiguration bereinigen..."
+    echo "$MSG_CERTBOT_CLEAN"
     sudo certbot delete --cert-name "$DOMAIN" --non-interactive 2>/dev/null || true
 
-    echo "==> SSL-Zertifikat wird beantragt (via nginx)..."
+    echo "$MSG_CERTBOT_REQ"
     sudo certbot --nginx \
         -d "$DOMAIN" \
         --email "$LE_EMAIL" \
@@ -236,20 +360,20 @@ if [ "$HTTPS_ENABLED" = true ]; then
         --redirect
 
     echo ""
-    echo "✅ Zertifikat erhalten: /etc/letsencrypt/live/${DOMAIN}/"
+    echo "$MSG_CERT_OK: /etc/letsencrypt/live/${DOMAIN}/"
 fi
 
 # ──────────────────────────────────────────────
 # Service starten
 # ──────────────────────────────────────────────
-echo "==> Service wird gestartet..."
+echo "$MSG_SVC_START"
 sudo systemctl restart ${SERVICE_NAME}
 
 sleep 2
 if sudo systemctl is-active --quiet ${SERVICE_NAME}; then
-    echo "✅ Service läuft"
+    echo "$MSG_SVC_OK"
 else
-    echo "❌ Service konnte nicht gestartet werden. Logs:"
+    echo "$MSG_SVC_FAIL"
     sudo journalctl -u ${SERVICE_NAME} -n 20 --no-pager
     exit 1
 fi
@@ -259,21 +383,21 @@ fi
 # ──────────────────────────────────────────────
 echo ""
 echo "╔══════════════════════════════════════════╗"
-echo "║          ✅ Installation fertig          ║"
+echo "$MSG_DONE_TITLE"
 echo "╚══════════════════════════════════════════╝"
 echo ""
 
 if [ "$HTTPS_ENABLED" = true ]; then
-    echo "   App erreichbar unter: https://${DOMAIN}"
+    echo "$MSG_REACH: https://${DOMAIN}"
 else
     SERVER_IP=$(hostname -I | awk '{print $1}')
-    echo "   App erreichbar unter: http://${SERVER_IP}"
+    echo "$MSG_REACH: http://${SERVER_IP}"
 fi
 
 echo ""
-echo "Update:"
+echo "$MSG_UPDATE_CMD"
 echo "  cd ${APP_DIR} && git pull && npm install --omit=dev && sudo systemctl restart ${SERVICE_NAME}"
 echo ""
-echo "Logs:"
+echo "$MSG_LOGS_CMD"
 echo "  journalctl -u ${SERVICE_NAME} -f"
 echo ""
