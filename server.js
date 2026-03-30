@@ -110,8 +110,7 @@ app.use(helmet({
             imgSrc:      ["'self'", "data:"],
             connectSrc:  ["'self'", "ws:", "wss:"],
             frameSrc:    ["'none'"],
-            objectSrc:   ["'none'"],
-            formAction:  ["'self'"]
+            objectSrc:   ["'none'"]
         }
     }
 }));
