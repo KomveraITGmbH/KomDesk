@@ -3196,7 +3196,6 @@ app.get('/admin', requireAdmin, requirePermission('dashboard.view'), (req, res) 
     // --- Server-Status ---
     const serverHtml = hasPermission(req, 'server.view') ? `
         <div class="card db-hero" style="grid-column:1/-1;">
-            <div id="srv-error-banner" style="display:none;background:#dc2626;color:#fff;padding:10px 14px;border-radius:10px;margin-bottom:16px;font-size:13px;font-weight:600;"></div>
             <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:20px;flex-wrap:wrap;gap:10px;">
                 <div class="db-card-title" style="margin:0;">⚙️ DeskView Server</div>
                 <div style="display:flex;gap:8px;flex-wrap:wrap;" data-csrf="${getCsrfToken(req)}">
@@ -3517,19 +3516,20 @@ app.get('/admin', requireAdmin, requirePermission('dashboard.view'), (req, res) 
             var ageEl = el('srv-log-age');
             if (ageEl) ageEl.textContent = new Date().toLocaleTimeString('de-DE');
         }
+        var _srvTimer = null;
         function srvFetch() {
             fetch('/admin/server/stats', { cache: 'no-store' })
-                .then(function(r) { return r.ok ? r.json() : Promise.reject(r.status); })
+                .then(function(r) { return r.ok ? r.json() : Promise.reject(); })
                 .then(function(d) { srvApply(d); })
-                .catch(function(status) {
-                    var banner = document.getElementById('srv-error-banner');
-                    if (banner) {
-                        banner.style.display = 'block';
-                        banner.textContent = status === 403
-                            ? 'Keine Berechtigung (server.view fehlt)'
-                            : 'Stats konnten nicht geladen werden (HTTP ' + status + ') – bitte Seite neu laden.';
-                    }
-                });
+                .catch(function() {});
+        }
+        function srvStartPolling() {
+            if (_srvTimer) return;
+            srvFetch();
+            _srvTimer = setInterval(srvFetch, 10000);
+        }
+        function srvStopPolling() {
+            if (_srvTimer) { clearInterval(_srvTimer); _srvTimer = null; }
         }
 
         document.addEventListener('DOMContentLoaded', function() {
@@ -3541,7 +3541,11 @@ app.get('/admin', requireAdmin, requirePermission('dashboard.view'), (req, res) 
                 if (_tsTimers[tid]) clearInterval(_tsTimers[tid]);
                 _tsTimers[tid] = setInterval(function() { fetchTerminalStatus(tid, row); }, ms);
             });
-            srvFetch();
+            srvStartPolling();
+        });
+
+        document.addEventListener('visibilitychange', function() {
+            if (document.hidden) { srvStopPolling(); } else { srvStartPolling(); }
         });
         </script>
     `;
