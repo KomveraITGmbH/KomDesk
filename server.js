@@ -1506,6 +1506,25 @@ function renderAdminLayout(req, title, content) {
                 if (pollingEl) pollingEl.style.display = mode === 'polling' ? 'block' : 'none';
                 if (webhookEl) webhookEl.style.display = mode === 'webhook' ? 'block' : 'none';
             }
+
+            async function testTrmnlPush(roomId) {
+                var resultEl = document.getElementById('trmnlTestResult_' + roomId);
+                var form = document.getElementById('trmnlTestForm_' + roomId);
+                resultEl.style.display = 'block';
+                resultEl.textContent = 'Teste Push...';
+                try {
+                    var fd = new FormData(form);
+                    var r = await fetch('/admin/test-trmnl-push', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                        body: new URLSearchParams(fd).toString()
+                    });
+                    var data = await r.json();
+                    resultEl.textContent = JSON.stringify(data, null, 2);
+                } catch(e) {
+                    resultEl.textContent = 'Fehler: ' + e.message;
+                }
+            }
         </script>
     </body>
     </html>
@@ -3300,6 +3319,13 @@ app.get('/admin/rooms', requireAdmin, requirePermission('rooms.view'), (req, res
 
                             <button type="submit">Raum speichern</button>
                         </form>
+
+                        <form id="trmnlTestForm_${escapeHtml(room.id)}" style="margin-top:8px;">
+                            <input type="hidden" name="_csrf" value="${req.csrfToken ? req.csrfToken() : ''}">
+                            <input type="hidden" name="roomId" value="${escapeHtml(room.id)}">
+                            <button type="button" onclick="testTrmnlPush('${escapeHtml(room.id)}')" style="background:#6b7280;">TRMNL Push testen</button>
+                        </form>
+                        <pre id="trmnlTestResult_${escapeHtml(room.id)}" style="display:none;margin-top:8px;background:#111;color:#0f0;padding:10px;border-radius:6px;font-size:12px;overflow:auto;max-height:200px;"></pre>
                         `
                         : `
                         <p><strong>Abteilung:</strong> ${escapeHtml(room.abteilung)}</p>
@@ -3462,6 +3488,47 @@ app.post('/admin/update-room', requireAdmin, requirePermission('rooms.edit'), re
         console.error(err);
         return res.status(500).send('Raum konnte nicht aktualisiert werden');
     }
+});
+
+app.post('/admin/test-trmnl-push', requireAdmin, requirePermission('rooms.edit'), requireCsrf, async (req, res) => {
+    const roomId = String(req.body.roomId || '').trim();
+    const room = getRoom(roomId);
+    if (!room) return res.status(404).json({ error: 'Raum nicht gefunden' });
+
+    const mode = room.trmnlMode || 'none';
+    if (mode === 'none') return res.json({ error: 'Kein TRMNL-Modus konfiguriert' });
+
+    const payload = renderRoomApiJson(room);
+    const results = [];
+
+    if (mode === 'webhook' && room.trmnlWebhookUrl) {
+        try {
+            const r = await fetch(room.trmnlWebhookUrl, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ merge_variables: payload })
+            });
+            const text = await r.text();
+            results.push({ type: 'Webhook URL', status: r.status, body: text.slice(0, 300) });
+        } catch (err) {
+            results.push({ type: 'Webhook URL', error: err.message });
+        }
+    }
+
+    if (mode === 'webhook' && room.trmnlDeviceApiKey && room.trmnlDeviceMac) {
+        try {
+            const r = await fetch(`https://usetrmnl.com/api/devices/${encodeURIComponent(room.trmnlDeviceMac)}/wake`, {
+                method: 'POST',
+                headers: { 'Authorization': `Bearer ${room.trmnlDeviceApiKey}`, 'Content-Type': 'application/json' }
+            });
+            const text = await r.text();
+            results.push({ type: 'Device Wake', status: r.status, body: text.slice(0, 300) });
+        } catch (err) {
+            results.push({ type: 'Device Wake', error: err.message });
+        }
+    }
+
+    return res.json({ results, payload });
 });
 
 app.post('/admin/delete-room', requireAdmin, requirePermission('rooms.delete'), requireCsrf, (req, res) => {
