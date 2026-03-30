@@ -3538,7 +3538,7 @@ app.post('/admin/save-sleep-schedule', requireAdmin, requirePermission('rooms.ed
         const headers = { 'Access-Token': room.trmnlDeviceApiKey, 'Content-Type': 'application/json' };
 
         // Gerät per MAC finden
-        const listRes = await fetch('https://api.trmnl.com/api/devices', { headers });
+        const listRes = await fetch('https://usetrmnl.com/api/devices', { headers });
         if (!listRes.ok) {
             const errText = await listRes.text();
             return res.json({ error: `TRMNL Fehler: ${listRes.status}`, body: errText.slice(0, 200) });
@@ -3557,7 +3557,7 @@ app.post('/admin/save-sleep-schedule', requireAdmin, requirePermission('rooms.ed
         const sleepStart = room.trmnlSleepStart || '19:00';
         const sleepEnd   = room.trmnlSleepEnd   || '07:00';
 
-        const patchRes = await fetch(`https://api.trmnl.com/api/devices/${device.id}`, {
+        const patchRes = await fetch(`https://usetrmnl.com/api/devices/${device.id}`, {
             method: 'PATCH',
             headers,
             body: JSON.stringify({
