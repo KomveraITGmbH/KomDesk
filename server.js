@@ -1,7 +1,8 @@
 const express = require('express');
 const cors = require('cors');
 const session = require('express-session');
-const FileStore = require('session-file-store')(session);
+let FileStore;
+try { FileStore = require('session-file-store')(session); } catch(e) { console.warn('[Session] session-file-store nicht installiert, nutze MemoryStore. Führe npm install aus.'); }
 const { ConfidentialClientApplication } = require('@azure/msal-node');
 const fs = require('fs');
 const path = require('path');
@@ -1825,8 +1826,11 @@ ensureSingleMasterAdmin();
 const bootstrapSessionSecret = generateStrongSecret();
 
 function buildSessionMiddleware() {
+    const store = FileStore
+        ? new FileStore({ path: path.join(DATA_DIR, 'sessions'), ttl: 86400, retries: 0, logFn: function(){} })
+        : undefined;
     return session({
-        store: new FileStore({ path: path.join(DATA_DIR, 'sessions'), ttl: 86400, retries: 0, logFn: function(){} }),
+        store,
         secret: String(appConfig.sessionSecret || '').trim() || bootstrapSessionSecret,
         resave: false,
         saveUninitialized: false,
@@ -3513,9 +3517,27 @@ app.get('/admin', requireAdmin, requirePermission('dashboard.view'), (req, res) 
         }
         function srvFetch() {
             fetch('/admin/server/stats', { cache: 'no-store' })
-                .then(function(r) { return r.ok ? r.json() : Promise.reject(); })
+                .then(function(r) {
+                    if (r.ok) return r.json();
+                    if (r.status === 403) return Promise.reject('403');
+                    if (r.status === 401 || r.redirected) return Promise.reject('auth');
+                    return Promise.reject('err');
+                })
                 .then(function(d) { srvApply(d); })
-                .catch(function() {});
+                .catch(function(reason) {
+                    var logEl = document.getElementById('srv-log');
+                    if (!logEl) return;
+                    if (reason === '403') {
+                        logEl.textContent = 'Keine Berechtigung (server.view fehlt). Bitte Admin-Konto prüfen.';
+                        logEl.style.color = '#dc2626';
+                    } else if (reason === 'auth') {
+                        logEl.textContent = 'Sitzung abgelaufen – bitte Seite neu laden und neu anmelden.';
+                        logEl.style.color = '#f59e0b';
+                    } else {
+                        logEl.textContent = 'Statistiken konnten nicht geladen werden.';
+                        logEl.style.color = '#dc2626';
+                    }
+                });
         }
         function srvStartPolling() {
             if (_srvTimer) return;
