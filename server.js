@@ -3320,23 +3320,12 @@ app.get('/admin/rooms', requireAdmin, requirePermission('rooms.view'), (req, res
                                 </div>
                             </div>
 
-                            <label style="margin-top:12px;">Aktualisierung tagsüber</label>
+                            <label style="margin-top:12px;">Aktualisierungsrate <span style="font-weight:400;opacity:.6;">(Minimum 1 Minute)</span></label>
                             <div style="display:flex;gap:8px;align-items:center;">
-                                <input type="number" name="trmnlRefreshDayValue" min="1" max="9999" value="${escapeHtml(String(room.trmnlRefreshDayValue || '15'))}" style="width:80px;" title="Minimum: 60 Sekunden (TRMNL-Limit)">
-                                <select name="trmnlRefreshDayUnit">
-                                    <option value="seconds" ${(room.trmnlRefreshDayUnit||'minutes')==='seconds' ? 'selected' : ''}>Sekunden</option>
-                                    <option value="minutes" ${(room.trmnlRefreshDayUnit||'minutes')==='minutes' ? 'selected' : ''}>Minuten</option>
-                                    <option value="hours"   ${(room.trmnlRefreshDayUnit||'minutes')==='hours'   ? 'selected' : ''}>Stunden</option>
-                                </select>
-                            </div>
-
-                            <label style="margin-top:12px;">Aktualisierung nachts <span style="font-weight:400;opacity:.6;">(während Sleep-Zeit, falls Sleep deaktiviert)</span></label>
-                            <div style="display:flex;gap:8px;align-items:center;">
-                                <input type="number" name="trmnlRefreshNightValue" min="1" max="9999" value="${escapeHtml(String(room.trmnlRefreshNightValue || '60'))}" style="width:80px;">
-                                <select name="trmnlRefreshNightUnit">
-                                    <option value="seconds" ${(room.trmnlRefreshNightUnit||'minutes')==='seconds' ? 'selected' : ''}>Sekunden</option>
-                                    <option value="minutes" ${(room.trmnlRefreshNightUnit||'minutes')==='minutes' ? 'selected' : ''}>Minuten</option>
-                                    <option value="hours"   ${(room.trmnlRefreshNightUnit||'minutes')==='hours'   ? 'selected' : ''}>Stunden</option>
+                                <input type="number" name="trmnlRefreshValue" min="1" max="9999" value="${escapeHtml(String(room.trmnlRefreshValue || '15'))}" style="width:80px;">
+                                <select name="trmnlRefreshUnit">
+                                    <option value="minutes" ${(room.trmnlRefreshUnit||'minutes')==='minutes' ? 'selected' : ''}>Minuten</option>
+                                    <option value="hours"   ${(room.trmnlRefreshUnit||'minutes')==='hours'   ? 'selected' : ''}>Stunden</option>
                                 </select>
                             </div>
 
@@ -3511,10 +3500,8 @@ app.post('/admin/update-room', requireAdmin, requirePermission('rooms.edit'), re
         room.trmnlDeviceMac = String(req.body.trmnlDeviceMac || '').trim();
         room.trmnlSleepStart = String(req.body.trmnlSleepStart || '').trim();
         room.trmnlSleepEnd = String(req.body.trmnlSleepEnd || '').trim();
-        room.trmnlRefreshDayValue = parseInt(req.body.trmnlRefreshDayValue) || 15;
-        room.trmnlRefreshDayUnit = ['seconds','minutes','hours'].includes(req.body.trmnlRefreshDayUnit) ? req.body.trmnlRefreshDayUnit : 'minutes';
-        room.trmnlRefreshNightValue = parseInt(req.body.trmnlRefreshNightValue) || 60;
-        room.trmnlRefreshNightUnit = ['seconds','minutes','hours'].includes(req.body.trmnlRefreshNightUnit) ? req.body.trmnlRefreshNightUnit : 'minutes';
+        room.trmnlRefreshValue = parseInt(req.body.trmnlRefreshValue) || 15;
+        room.trmnlRefreshUnit = ['minutes','hours'].includes(req.body.trmnlRefreshUnit) ? req.body.trmnlRefreshUnit : 'minutes';
 
         saveRooms();
         return res.redirect('/admin/rooms');
@@ -3581,17 +3568,10 @@ app.post('/admin/save-sleep-schedule', requireAdmin, requirePermission('rooms.ed
         const sleepStart = room.trmnlSleepStart || '19:00';
         const sleepEnd   = room.trmnlSleepEnd   || '07:00';
 
-        // Refresh-Rate → Sekunden
-        const toSeconds = (val, unit) => {
-            const v = parseInt(val) || 1;
-            let s;
-            if (unit === 'seconds') s = v;
-            else if (unit === 'hours') s = v * 3600;
-            else s = v * 60;
-            return Math.max(60, s); // TRMNL Minimum: 60 Sekunden
-        };
-        const refreshDay   = toSeconds(room.trmnlRefreshDayValue   || 15,  room.trmnlRefreshDayUnit   || 'minutes');
-        const refreshNight = toSeconds(room.trmnlRefreshNightValue  || 60,  room.trmnlRefreshNightUnit || 'minutes');
+        // Refresh-Rate → Millisekunden (TRMNL erwartet ms)
+        const val  = parseInt(room.trmnlRefreshValue) || 15;
+        const unit = room.trmnlRefreshUnit || 'minutes';
+        const refreshMs = unit === 'hours' ? val * 3600000 : val * 60000;
 
         const patchRes = await fetch(`https://usetrmnl.com/api/devices/${device.id}`, {
             method: 'PATCH',
@@ -3600,15 +3580,14 @@ app.post('/admin/save-sleep-schedule', requireAdmin, requirePermission('rooms.ed
                 sleep_mode_enabled: true,
                 sleep_start_time: toMinutes(sleepStart),
                 sleep_end_time:   toMinutes(sleepEnd),
-                refresh_rate:     refreshDay,
-                sleep_refresh_rate: refreshNight
+                refresh_rate:     refreshMs
             })
         });
 
         const text = await patchRes.text();
         let body;
         try { body = JSON.parse(text); } catch(e) { body = text; }
-        return res.json({ status: patchRes.status, body, device_id: device.id, sleep_start: sleepStart, sleep_end: sleepEnd, refresh_day_s: refreshDay, refresh_night_s: refreshNight });
+        return res.json({ status: patchRes.status, body, device_id: device.id, sleep_start: sleepStart, sleep_end: sleepEnd, refresh_rate_ms: refreshMs });
     } catch (err) {
         return res.json({ error: err.message });
     }
