@@ -6030,7 +6030,9 @@ app.get('/admin/ssh', requireAdmin, requirePermission('server.ssh'), (req, res) 
         <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/xterm@5.3.0/css/xterm.min.css">
         <script src="https://cdn.jsdelivr.net/npm/xterm@5.3.0/lib/xterm.min.js"></script>
         <script src="https://cdn.jsdelivr.net/npm/xterm-addon-fit@0.8.0/lib/xterm-addon-fit.min.js"></script>
+        <span data-csrf="${getCsrfToken(req)}" style="display:none;"></span>
         <script>
+        function getCsrf() { var el = document.querySelector('[data-csrf]'); return el ? el.getAttribute('data-csrf') : ''; }
         var sshWs   = null;
         var sshTerm = null;
         var fitAddon = null;
