@@ -188,6 +188,9 @@ if [ "$HTTPS_ENABLED" = true ]; then
     echo "==> Certbot wird installiert..."
     sudo apt install -y certbot
 
+    echo "==> Service wird gestoppt (Port 80 für certbot freigeben)..."
+    sudo systemctl stop ${SERVICE_NAME} 2>/dev/null || true
+
     echo "==> SSL-Zertifikat wird beantragt (Let's Encrypt)..."
     sudo certbot certonly --standalone \
         -d "$DOMAIN" \

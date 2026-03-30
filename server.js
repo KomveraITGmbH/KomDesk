@@ -91,7 +91,7 @@ function getServerStats() {
 }
 
 const app = express();
-const PORT = 3000;
+const PORT = process.env.HTTPS_ENABLED === 'true' ? 443 : 80;
 const BCRYPT_ROUNDS = 12;
 
 app.set('trust proxy', 1);
