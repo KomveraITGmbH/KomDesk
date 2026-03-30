@@ -102,6 +102,7 @@ const httpsEnabled = process.env.HTTPS_ENABLED === 'true';
 app.use(helmet({
     hsts: httpsEnabled ? { maxAge: 31536000, includeSubDomains: true } : false,
     contentSecurityPolicy: {
+        useDefaults: false,
         directives: {
             defaultSrc:  ["'self'"],
             scriptSrc:   ["'self'", "'unsafe-inline'", "https://cdn.jsdelivr.net"],
