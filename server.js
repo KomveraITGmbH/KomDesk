@@ -94,10 +94,6 @@ if (process.env.HTTPS_ENABLED === 'true') {
     app.set('trust proxy', 1);
 }
 
-app.use((req, res, next) => {
-    res.setHeader('Content-Type', 'text/html; charset=utf-8');
-    next();
-});
 
 app.use(helmet({
     contentSecurityPolicy: false
@@ -3358,7 +3354,7 @@ app.get('/admin', requireAdmin, requirePermission('dashboard.view'), (req, res) 
             var el   = document.getElementById('srv-systemctl');
             if (!el) return;
             if (wrap) wrap.style.display = 'block';
-            el.textContent = 'Wird geladen…';
+            el.textContent = 'Wird geladen\u2026';
             fetch('/admin/server/systemctl-status')
                 .then(function(r){ return r.json(); })
                 .then(function(d){ el.textContent = d.output || '(keine Ausgabe)'; })
@@ -3444,10 +3440,10 @@ app.get('/admin', requireAdmin, requirePermission('dashboard.view'), (req, res) 
         }
 
         function srvDoReboot() {
-            var overlay = srvShowOverlay('Linux-Server wird neu gestartet…', [
-                { id:'r1', text:'Neustart-Befehl wird gesendet…' },
-                { id:'r2', text:'Server fährt herunter…' },
-                { id:'r3', text:'Bitte warte — dauert ca. 1–2 Minuten' }
+            var overlay = srvShowOverlay('Linux-Server wird neu gestartet\u2026', [
+                { id:'r1', text:'Neustart-Befehl wird gesendet\u2026' },
+                { id:'r2', text:'Server f\u00e4hrt herunter\u2026' },
+                { id:'r3', text:'Bitte warte \u2014 dauert ca. 1\u20132 Minuten' }
             ]);
             fetch('/admin/server/reboot', { method:'POST', headers:{'Content-Type':'application/x-www-form-urlencoded'}, body:'_csrf='+encodeURIComponent(getCsrf()) })
                 .then(function() {
@@ -3532,17 +3528,15 @@ app.get('/admin', requireAdmin, requirePermission('dashboard.view'), (req, res) 
             if (_srvTimer) { clearInterval(_srvTimer); _srvTimer = null; }
         }
 
-        document.addEventListener('DOMContentLoaded', function() {
-            document.querySelectorAll('.term-live-row').forEach(function(row) {
-                var tid = row.getAttribute('data-tid');
-                if (!tid) return;
-                fetchTerminalStatus(tid, row);
-                var ms = parseInt(row.getAttribute('data-interval') || '30', 10) * 60 * 1000;
-                if (_tsTimers[tid]) clearInterval(_tsTimers[tid]);
-                _tsTimers[tid] = setInterval(function() { fetchTerminalStatus(tid, row); }, ms);
-            });
-            srvStartPolling();
+        document.querySelectorAll('.term-live-row').forEach(function(row) {
+            var tid = row.getAttribute('data-tid');
+            if (!tid) return;
+            fetchTerminalStatus(tid, row);
+            var ms = parseInt(row.getAttribute('data-interval') || '30', 10) * 60 * 1000;
+            if (_tsTimers[tid]) clearInterval(_tsTimers[tid]);
+            _tsTimers[tid] = setInterval(function() { fetchTerminalStatus(tid, row); }, ms);
         });
+        srvStartPolling();
 
         document.addEventListener('visibilitychange', function() {
             if (document.hidden) { srvStopPolling(); } else { srvStartPolling(); }
