@@ -174,52 +174,23 @@ else
 fi
 
 # ──────────────────────────────────────────────
-# nginx + Let's Encrypt (nur wenn HTTPS gewählt)
+# Let's Encrypt (nur wenn HTTPS gewählt)
 # ──────────────────────────────────────────────
 if [ "$HTTPS_ENABLED" = true ]; then
     echo ""
-    echo "==> nginx wird installiert..."
-    sudo apt install -y nginx
-
     echo "==> Certbot wird installiert..."
-    sudo apt install -y certbot python3-certbot-nginx
-
-    echo "==> nginx Konfiguration wird erstellt..."
-    sudo tee /etc/nginx/sites-available/${SERVICE_NAME} > /dev/null <<EOF
-server {
-    listen 80;
-    server_name ${DOMAIN};
-
-    location / {
-        proxy_pass http://127.0.0.1:3000;
-        proxy_http_version 1.1;
-        proxy_set_header Host \$host;
-        proxy_set_header X-Real-IP \$remote_addr;
-        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto \$scheme;
-        proxy_set_header Upgrade \$http_upgrade;
-        proxy_set_header Connection 'upgrade';
-        proxy_cache_bypass \$http_upgrade;
-    }
-}
-EOF
-
-    sudo ln -sf /etc/nginx/sites-available/${SERVICE_NAME} /etc/nginx/sites-enabled/${SERVICE_NAME}
-    sudo nginx -t
-    sudo systemctl restart nginx
+    sudo apt install -y certbot
 
     echo "==> SSL-Zertifikat wird beantragt (Let's Encrypt)..."
-    sudo certbot --nginx \
+    sudo certbot certonly --standalone \
         -d "$DOMAIN" \
         --email "$LE_EMAIL" \
         --agree-tos \
-        --non-interactive \
-        --redirect
+        --non-interactive
 
     echo ""
-    echo "✅ HTTPS eingerichtet"
-    echo "   Erreichbar unter: https://${DOMAIN}"
-    echo ""
+    echo "✅ Zertifikat erhalten"
+    echo "   Pfad: /etc/letsencrypt/live/${DOMAIN}/"
     echo "   Zertifikat wird automatisch erneuert (certbot-Timer aktiv)."
 fi
 
