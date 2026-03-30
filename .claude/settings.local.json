@@ -1,0 +1,14 @@
+{
+  "permissions": {
+    "allow": [
+      "WebFetch(domain:docs.trmnl.com)",
+      "WebSearch",
+      "WebFetch(domain:docs.usetrmnl.com)",
+      "WebFetch(domain:github.com)",
+      "WebFetch(domain:help.trmnl.com)",
+      "Bash(npm install:*)",
+      "Read(//usr/local/bin/**)",
+      "Read(//c/Users/JasonDarr/.nvm/versions/**)"
+    ]
+  }
+}

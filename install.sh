@@ -153,6 +153,17 @@ sudo systemctl enable ${SERVICE_NAME}
 sudo systemctl restart ${SERVICE_NAME}
 
 # ──────────────────────────────────────────────
+# sudoers – Neustart ohne Passwort
+# ──────────────────────────────────────────────
+echo "==> sudoers Eintrag wird erstellt..."
+SUDOERS_FILE="/etc/sudoers.d/${SERVICE_NAME}"
+sudo tee "$SUDOERS_FILE" > /dev/null <<EOF
+${USER} ALL=(ALL) NOPASSWD: /bin/systemctl restart ${SERVICE_NAME}, /bin/systemctl status ${SERVICE_NAME}, /usr/bin/systemctl restart ${SERVICE_NAME}, /usr/bin/systemctl status ${SERVICE_NAME}, /sbin/reboot, /usr/sbin/reboot
+EOF
+sudo chmod 440 "$SUDOERS_FILE"
+echo "==> sudoers OK: systemctl restart/status und reboot ohne Passwort möglich"
+
+# ──────────────────────────────────────────────
 # nginx + Let's Encrypt (nur wenn HTTPS gewählt)
 # ──────────────────────────────────────────────
 if [ "$HTTPS_ENABLED" = true ]; then
@@ -214,6 +225,9 @@ else
     echo "   App erreichbar unter: http://<Server-IP>:3000"
 fi
 
+echo ""
+echo "Update einspielen mit:"
+echo "  cd ${APP_DIR} && git pull && npm install --omit=dev && sudo systemctl restart ${SERVICE_NAME}"
 echo ""
 echo "Status prüfen mit:"
 echo "  sudo systemctl status ${SERVICE_NAME}"

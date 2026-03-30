@@ -3519,24 +3519,19 @@ app.get('/admin', requireAdmin, requirePermission('dashboard.view'), (req, res) 
             fetch('/admin/server/stats', { cache: 'no-store' })
                 .then(function(r) {
                     if (r.ok) return r.json();
-                    if (r.status === 403) return Promise.reject('403');
-                    if (r.status === 401 || r.redirected) return Promise.reject('auth');
-                    return Promise.reject('err');
+                    return Promise.reject('HTTP ' + r.status + (r.redirected ? ' (redirect)' : ''));
                 })
-                .then(function(d) { srvApply(d); })
+                .then(function(d) {
+                    var logEl = document.getElementById('srv-log');
+                    if (logEl) logEl.style.color = '';
+                    srvApply(d);
+                })
                 .catch(function(reason) {
                     var logEl = document.getElementById('srv-log');
                     if (!logEl) return;
-                    if (reason === '403') {
-                        logEl.textContent = 'Keine Berechtigung (server.view fehlt). Bitte Admin-Konto prüfen.';
-                        logEl.style.color = '#dc2626';
-                    } else if (reason === 'auth') {
-                        logEl.textContent = 'Sitzung abgelaufen – bitte Seite neu laden und neu anmelden.';
-                        logEl.style.color = '#f59e0b';
-                    } else {
-                        logEl.textContent = 'Statistiken konnten nicht geladen werden.';
-                        logEl.style.color = '#dc2626';
-                    }
+                    var msg = (typeof reason === 'string') ? reason : (reason && reason.message ? reason.message : String(reason));
+                    logEl.textContent = 'Fehler beim Laden der Statistiken: ' + msg;
+                    logEl.style.color = '#dc2626';
                 });
         }
         function srvStartPolling() {
@@ -3557,6 +3552,8 @@ app.get('/admin', requireAdmin, requirePermission('dashboard.view'), (req, res) 
                 if (_tsTimers[tid]) clearInterval(_tsTimers[tid]);
                 _tsTimers[tid] = setInterval(function() { fetchTerminalStatus(tid, row); }, ms);
             });
+            var logEl = document.getElementById('srv-log');
+            if (logEl) { logEl.textContent = 'Laden...'; logEl.style.color = ''; }
             srvStartPolling();
         });
 
