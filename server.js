@@ -3409,45 +3409,39 @@ app.get('/admin', requireAdmin, requirePermission('dashboard.view'), (req, res) 
         }
 
         function srvDoRestart() {
-            var overlay = srvShowOverlay('DeskView wird neu gestartet…', [
-                { id:'s1', text:'Neustart-Befehl wird gesendet…' },
-                { id:'s2', text:'Warte bis Server stoppt…' },
-                { id:'s3', text:'Warte bis Server wieder läuft…' },
-                { id:'s4', text:'Weiterleitung…' }
+            var overlay = srvShowOverlay('DeskView wird neu gestartet\u2026', [
+                { id:'s1', text:'Neustart-Befehl senden\u2026' },
+                { id:'s2', text:'Server startet neu\u2026' },
+                { id:'s3', text:'Warte bis DeskView wieder l\u00e4uft\u2026' },
+                { id:'s4', text:'Weiterleitung\u2026' }
             ]);
             fetch('/admin/server/restart', { method:'POST', headers:{'Content-Type':'application/x-www-form-urlencoded'}, body:'_csrf='+encodeURIComponent(getCsrf()) })
-                .then(function() {
+                .then(function(r) {
+                    if (!r.ok) throw new Error('HTTP ' + r.status);
                     srvStepDone(overlay, 's1');
                     srvStepActive(overlay, 's2');
-                    // Warte bis Server nicht mehr erreichbar ist (max 15s)
-                    var gone = false, goneTimer = 0;
-                    function waitGone() {
-                        fetch('/admin/server/stats').then(function() {
-                            goneTimer++;
-                            if (goneTimer < 15) setTimeout(waitGone, 1000);
-                            else startWaitBack(); // Fallback
-                        }).catch(function() {
-                            gone = true;
-                            srvStepDone(overlay, 's2');
-                            srvStepActive(overlay, 's3');
-                            startWaitBack();
-                        });
-                    }
-                    function startWaitBack() {
+                    // 4 Sekunden warten damit systemctl Zeit hat den Prozess zu stoppen
+                    setTimeout(function() {
+                        srvStepDone(overlay, 's2');
+                        srvStepActive(overlay, 's3');
                         var tries = 0;
-                        function waitBack() {
-                            fetch('/admin/server/stats').then(function(r) {
-                                if (r.ok) {
-                                    srvStepDone(overlay, 's3');
-                                    srvStepActive(overlay, 's4');
-                                    setTimeout(function() { window.location.href = '/admin'; }, 1200);
-                                } else { retry(); }
-                            }).catch(function() { retry(); });
-                            function retry() { tries++; if(tries < 60) setTimeout(waitBack, 2000); }
+                        function poll() {
+                            fetch('/admin/server/stats', { cache: 'no-store' })
+                                .then(function(r) {
+                                    if (r.ok) {
+                                        srvStepDone(overlay, 's3');
+                                        srvStepActive(overlay, 's4');
+                                        setTimeout(function() { window.location.href = '/admin'; }, 1000);
+                                    } else {
+                                        if (++tries < 60) setTimeout(poll, 2000);
+                                    }
+                                })
+                                .catch(function() {
+                                    if (++tries < 60) setTimeout(poll, 2000);
+                                });
                         }
-                        setTimeout(waitBack, 1500);
-                    }
-                    setTimeout(waitGone, 800);
+                        poll();
+                    }, 4000);
                 })
                 .catch(function() {
                     overlay.querySelector('.srv-overlay-box').innerHTML += '<p style="color:#dc2626;margin-top:16px;font-size:13px;">Fehler beim Senden des Befehls.</p>';
