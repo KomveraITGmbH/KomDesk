@@ -3577,10 +3577,12 @@ app.post('/admin/save-sleep-schedule', requireAdmin, requirePermission('rooms.ed
             method: 'PATCH',
             headers,
             body: JSON.stringify({
-                sleep_mode_enabled: true,
-                sleep_start_time: toMinutes(sleepStart),
-                sleep_end_time:   toMinutes(sleepEnd),
-                refresh_rate:     refreshMs
+                device: {
+                    sleep_mode_enabled: true,
+                    sleep_start_time: toMinutes(sleepStart),
+                    sleep_end_time:   toMinutes(sleepEnd),
+                    refresh_rate:     refreshMs
+                }
             })
         });
 
