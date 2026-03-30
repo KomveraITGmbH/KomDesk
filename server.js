@@ -3323,15 +3323,6 @@ app.get('/admin/rooms', requireAdmin, requirePermission('rooms.view'), (req, res
                                 </div>
                             </div>
 
-                            <label style="margin-top:12px;">Aktualisierungsrate <span style="font-weight:400;opacity:.6;">(Minimum 5 Minuten)</span></label>
-                            <div style="display:flex;gap:8px;align-items:center;">
-                                <input type="number" name="trmnlRefreshValue" min="5" max="9999" value="${escapeHtml(String(room.trmnlRefreshValue || '15'))}" style="width:80px;">
-                                <select name="trmnlRefreshUnit">
-                                    <option value="minutes" ${(room.trmnlRefreshUnit||'minutes')==='minutes' ? 'selected' : ''}>Minuten</option>
-                                    <option value="hours"   ${(room.trmnlRefreshUnit||'minutes')==='hours'   ? 'selected' : ''}>Stunden</option>
-                                </select>
-                            </div>
-
                             <button type="submit">Raum speichern</button>
                         </form>
 
@@ -3504,8 +3495,7 @@ app.post('/admin/update-room', requireAdmin, requirePermission('rooms.edit'), re
         room.trmnlDeviceMac = String(req.body.trmnlDeviceMac || '').trim();
         room.trmnlSleepStart = String(req.body.trmnlSleepStart || '').trim();
         room.trmnlSleepEnd = String(req.body.trmnlSleepEnd || '').trim();
-        room.trmnlRefreshValue = parseInt(req.body.trmnlRefreshValue) || 15;
-        room.trmnlRefreshUnit = ['minutes','hours'].includes(req.body.trmnlRefreshUnit) ? req.body.trmnlRefreshUnit : 'minutes';
+
 
         saveRooms();
         return res.redirect('/admin/rooms');
@@ -3576,17 +3566,11 @@ app.post('/admin/save-sleep-schedule', requireAdmin, requirePermission('rooms.ed
         const sleepStart = room.trmnlSleepStart || '19:00';
         const sleepEnd   = room.trmnlSleepEnd   || '07:00';
 
-        // Refresh-Rate → Sekunden (TRMNL minimum: 300s = 5 Min)
-        const val  = parseInt(room.trmnlRefreshValue) || 15;
-        const unit = room.trmnlRefreshUnit || 'minutes';
-        const refreshSec = Math.max(300, unit === 'hours' ? val * 3600 : val * 60);
-
         const patchBody = {
             device: {
                 sleep_mode_enabled: true,
                 sleep_start_time: toMinutes(sleepStart),
-                sleep_end_time:   toMinutes(sleepEnd),
-                refresh_rate:     refreshSec
+                sleep_end_time:   toMinutes(sleepEnd)
             }
         };
 
