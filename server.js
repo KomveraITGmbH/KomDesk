@@ -3323,242 +3323,7 @@ app.get('/admin', requireAdmin, requirePermission('dashboard.view'), (req, res) 
         .srv-step:last-child { border-bottom:none; }
         .srv-step-icon { width:22px;text-align:center;flex-shrink:0; }
         </style>
-        <script>
-        // ---- Terminal-Status ----
-        var _tsTimers = {};
-        function fetchTerminalStatus(tid, row) {
-            fetch('/admin/terminals/status/' + encodeURIComponent(tid))
-                .then(function(r){ return r.json(); })
-                .then(function(data) {
-                    if (data.error || !data.device) return;
-                    var d = data.device;
-                    var battEl  = row.querySelector('.ts-batt');
-                    var wifiEl  = row.querySelector('.ts-wifi');
-                    var sleepEl = row.querySelector('.ts-sleep');
-                    if (battEl) battEl.textContent = '🔋 ' + (d.percent_charged != null ? Math.round(d.percent_charged) + '%' : '–');
-                    if (wifiEl)  wifiEl.textContent = '📶 ' + (d.wifi_strength   != null ? d.wifi_strength + '%' : '–');
-                    if (sleepEl) sleepEl.textContent = d.sleep_mode_enabled ? '😴 An' : '';
-                })
-                .catch(function(){});
-        }
-
-        // ---- Server-Stats ----
-        function fmtUptime(s) {
-            var d = Math.floor(s/86400), h = Math.floor((s%86400)/3600), m = Math.floor((s%3600)/60), sc = s%60;
-            if (d>0) return d+'d '+h+'h '+m+'m';
-            if (h>0) return h+'h '+m+'m '+sc+'s';
-            return m+'m '+sc+'s';
-        }
-        function srvFetchStatus() {
-            var wrap = document.getElementById('srv-systemctl-wrap');
-            var el   = document.getElementById('srv-systemctl');
-            if (!el) return;
-            if (wrap) wrap.style.display = 'block';
-            el.textContent = 'Wird geladen\u2026';
-            fetch('/admin/server/systemctl-status')
-                .then(function(r){ return r.json(); })
-                .then(function(d){ el.textContent = d.output || '(keine Ausgabe)'; })
-                .catch(function(){ el.textContent = 'Fehler beim Laden.'; });
-        }
-
-        // ---- Restart Modal ----
-        function getCsrf() {
-            var el = document.querySelector('[data-csrf]');
-            return el ? el.getAttribute('data-csrf') : '';
-        }
-        function srvConfirmRestart(type) {
-            var isDeskview = type === 'deskview';
-            var modal = document.createElement('div');
-            modal.className = 'srv-modal-bg';
-            modal.innerHTML =
-                '<div class="srv-modal">' +
-                    '<div class="srv-modal-icon">' + (isDeskview ? '\u21BA' : '\u23FB') + '</div>' +
-                    '<div class="srv-modal-title">' + (isDeskview ? 'DeskView neu starten?' : 'Linux neu starten?') + '</div>' +
-                    '<div class="srv-modal-desc">' + (isDeskview
-                        ? 'Der DeskView-Dienst wird neu gestartet.<br>Du wirst automatisch weitergeleitet sobald er wieder l\u00e4uft.'
-                        : 'Der gesamte Linux-Server wird neu gestartet.<br>Alle Verbindungen werden getrennt. Dies dauert einige Minuten.') +
-                    '</div>' +
-                    '<label class="srv-modal-check">' +
-                        '<input type="checkbox" id="srv-confirm-cb">' +
-                        '<span>' + (isDeskview ? 'Ja, DeskView jetzt neu starten' : 'Ja, Linux-Server jetzt neu starten') + '</span>' +
-                    '</label>' +
-                    '<div class="srv-modal-btns">' +
-                        '<button class="srv-modal-cancel">Abbrechen</button>' +
-                        '<button class="srv-modal-confirm" id="srv-confirm-btn" disabled style="background:' + (isDeskview ? '#f59e0b' : '#dc2626') + ';">Neu starten</button>' +
-                    '</div>' +
-                '</div>';
-            document.body.appendChild(modal);
-            var cb  = modal.querySelector('#srv-confirm-cb');
-            var btn = modal.querySelector('#srv-confirm-btn');
-            cb.addEventListener('change', function() { btn.disabled = !cb.checked; });
-            modal.querySelector('.srv-modal-cancel').addEventListener('click', function() { modal.remove(); });
-            modal.addEventListener('click', function(e) { if (e.target === modal) modal.remove(); });
-            btn.addEventListener('click', function() {
-                modal.remove();
-                isDeskview ? srvDoRestart() : srvDoReboot();
-            });
-        }
-
-        function srvDoRestart() {
-            var overlay = srvShowOverlay('DeskView wird neu gestartet\u2026', [
-                { id:'s1', text:'Neustart-Befehl senden\u2026' },
-                { id:'s2', text:'Server startet neu\u2026' },
-                { id:'s3', text:'Warte bis DeskView wieder l\u00e4uft\u2026' },
-                { id:'s4', text:'Weiterleitung\u2026' }
-            ]);
-            fetch('/admin/server/restart', { method:'POST', headers:{'Content-Type':'application/x-www-form-urlencoded'}, body:'_csrf='+encodeURIComponent(getCsrf()) })
-                .then(function(r) {
-                    if (!r.ok) throw new Error('HTTP ' + r.status);
-                    srvStepDone(overlay, 's1');
-                    srvStepActive(overlay, 's2');
-                    // 4 Sekunden warten damit systemctl Zeit hat den Prozess zu stoppen
-                    setTimeout(function() {
-                        srvStepDone(overlay, 's2');
-                        srvStepActive(overlay, 's3');
-                        var tries = 0;
-                        function poll() {
-                            fetch('/admin/server/stats', { cache: 'no-store' })
-                                .then(function(r) {
-                                    if (r.ok) {
-                                        srvStepDone(overlay, 's3');
-                                        srvStepActive(overlay, 's4');
-                                        setTimeout(function() { window.location.href = '/admin'; }, 1000);
-                                    } else {
-                                        if (++tries < 60) setTimeout(poll, 2000);
-                                    }
-                                })
-                                .catch(function() {
-                                    if (++tries < 60) setTimeout(poll, 2000);
-                                });
-                        }
-                        poll();
-                    }, 4000);
-                })
-                .catch(function() {
-                    overlay.querySelector('.srv-overlay-box').innerHTML += '<p style="color:#dc2626;margin-top:16px;font-size:13px;">Fehler beim Senden des Befehls.</p>';
-                });
-        }
-
-        function srvDoReboot() {
-            var overlay = srvShowOverlay('Linux-Server wird neu gestartet\u2026', [
-                { id:'r1', text:'Neustart-Befehl wird gesendet\u2026' },
-                { id:'r2', text:'Server f\u00e4hrt herunter\u2026' },
-                { id:'r3', text:'Bitte warte \u2014 dauert ca. 1\u20132 Minuten' }
-            ]);
-            fetch('/admin/server/reboot', { method:'POST', headers:{'Content-Type':'application/x-www-form-urlencoded'}, body:'_csrf='+encodeURIComponent(getCsrf()) })
-                .then(function() {
-                    srvStepDone(overlay, 'r1');
-                    srvStepActive(overlay, 'r2');
-                    setTimeout(function() { srvStepDone(overlay, 'r2'); srvStepActive(overlay, 'r3'); }, 3000);
-                })
-                .catch(function() {
-                    overlay.querySelector('.srv-overlay-box').innerHTML += '<p style="color:#dc2626;margin-top:16px;font-size:13px;">Fehler beim Senden des Befehls.</p>';
-                });
-        }
-
-        function srvShowOverlay(title, steps) {
-            var overlay = document.createElement('div');
-            overlay.className = 'srv-overlay';
-            var stepsHtml = steps.map(function(s) {
-                return '<div class="srv-step" id="ovl-'+s.id+'"><span class="srv-step-icon">⏳</span><span>'+s.text+'</span></div>';
-            }).join('');
-            overlay.innerHTML =
-                '<div class="srv-overlay-box">' +
-                    '<div class="srv-spinner"></div>' +
-                    '<div style="font-size:17px;font-weight:700;margin-bottom:20px;">'+title+'</div>' +
-                    '<div style="text-align:left;">'+stepsHtml+'</div>' +
-                '</div>';
-            document.body.appendChild(overlay);
-            // Ersten Schritt sofort aktiv
-            srvStepActive(overlay, steps[0].id);
-            return overlay;
-        }
-        function srvStepDone(overlay, id) {
-            var el = overlay.querySelector('#ovl-'+id+' .srv-step-icon');
-            if (el) el.textContent = '✅';
-        }
-        function srvStepActive(overlay, id) {
-            var el = overlay.querySelector('#ovl-'+id+' .srv-step-icon');
-            if (el) el.textContent = '⏳';
-        }
-
-        function srvApply(d) {
-            function el(id) { return document.getElementById(id); }
-            function set(id, val) { var e = el(id); if (e) e.textContent = val; }
-            var cpuBar = el('srv-cpu-bar'), ramBar = el('srv-ram-bar');
-            set('srv-cpu',       d.cpu + '%');
-            set('srv-cpu-cores', d.cpuCores);
-            set('srv-load',      d.load1 + ' / ' + d.load5 + ' / ' + d.load15 + ' (1/5/15 min)');
-            set('srv-ram',       d.ramPct + '%');
-            set('srv-ram-detail',d.ramUsed + ' MB / ' + d.ramTotal + ' MB');
-            set('srv-uptime',    fmtUptime(d.uptime));
-            set('srv-sys-uptime',fmtUptime(d.sysUptime));
-            set('srv-heap',      d.heapUsed + ' / ' + d.heapTotal + ' MB');
-            set('srv-rss',       d.rss + ' MB');
-            set('srv-node',      d.nodeVer);
-            set('srv-host',      d.hostname);
-            set('srv-platform',  d.platform);
-            set('srv-ip',        (d.ips && d.ips.length) ? d.ips.join(', ') : '–');
-            if (cpuBar) { cpuBar.style.width = d.cpu+'%'; cpuBar.style.background = d.cpu>80?'#dc2626':d.cpu>50?'#f59e0b':'#2563eb'; }
-            if (ramBar) { ramBar.style.width = d.ramPct+'%'; ramBar.style.background = d.ramPct>85?'#dc2626':d.ramPct>60?'#f59e0b':'#059669'; }
-            var logEl = el('srv-log');
-            if (logEl && d.logs) {
-                var atBottom = logEl.scrollTop + logEl.clientHeight >= logEl.scrollHeight - 10;
-                logEl.textContent = d.logs.map(function(l){
-                    return '['+new Date(l.t).toLocaleTimeString('de-DE')+'] ['+l.level.toUpperCase()+'] '+l.msg;
-                }).join('\n');
-                if (atBottom) logEl.scrollTop = logEl.scrollHeight;
-            }
-            var ageEl = el('srv-log-age');
-            if (ageEl) ageEl.textContent = new Date().toLocaleTimeString('de-DE');
-        }
-        var _srvTimer = null;
-        function srvFetch() {
-            fetch('/admin/server/stats', { cache: 'no-store' })
-                .then(function(r) {
-                    if (r.ok) return r.json();
-                    return Promise.reject('HTTP ' + r.status + (r.redirected ? ' (redirect \u2013 Sitzung abgelaufen?)' : ''));
-                })
-                .then(function(d) {
-                    var logEl = document.getElementById('srv-log');
-                    if (logEl) logEl.style.color = '';
-                    srvApply(d);
-                })
-                .catch(function(reason) {
-                    var logEl = document.getElementById('srv-log');
-                    if (!logEl) return;
-                    var msg = (typeof reason === 'string') ? reason : (reason && reason.message ? reason.message : String(reason));
-                    logEl.textContent = 'Fehler beim Laden der Statistiken: ' + msg;
-                    logEl.style.color = '#dc2626';
-                });
-        }
-        function srvStartPolling() {
-            if (_srvTimer) return;
-            srvFetch();
-            _srvTimer = setInterval(srvFetch, 10000);
-        }
-        function srvStopPolling() {
-            if (_srvTimer) { clearInterval(_srvTimer); _srvTimer = null; }
-        }
-
-        (function() {
-            document.querySelectorAll('.term-live-row').forEach(function(row) {
-                var tid = row.getAttribute('data-tid');
-                if (!tid) return;
-                fetchTerminalStatus(tid, row);
-                var ms = parseInt(row.getAttribute('data-interval') || '30', 10) * 60 * 1000;
-                if (_tsTimers[tid]) clearInterval(_tsTimers[tid]);
-                _tsTimers[tid] = setInterval(function() { fetchTerminalStatus(tid, row); }, ms);
-            });
-            var logEl = document.getElementById('srv-log');
-            if (logEl) { logEl.textContent = 'Laden\u2026'; logEl.style.color = ''; }
-            srvStartPolling();
-        })();
-
-        document.addEventListener('visibilitychange', function() {
-            if (document.hidden) { srvStopPolling(); } else { srvStartPolling(); }
-        });
-        </script>
+        <script src="/admin/srv.js"></script>
     `;
 
     res.send(renderAdminLayout(req, 'Dashboard', content));
@@ -4156,6 +3921,211 @@ app.get('/admin/terminals/status/:terminalId', requireAdmin, requirePermission('
     } catch (err) {
         return res.json({ error: err.message });
     }
+});
+
+/*
+==================================================
+DASHBOARD CLIENT-SCRIPT
+==================================================
+*/
+app.get('/admin/srv.js', (_req, res) => {
+    res.setHeader('Content-Type', 'application/javascript; charset=utf-8');
+    res.setHeader('Cache-Control', 'no-store');
+    res.send(
+        'var _tsTimers = {};\n' +
+        'function fetchTerminalStatus(tid, row) {\n' +
+        '    fetch(\'/admin/terminals/status/\' + encodeURIComponent(tid))\n' +
+        '        .then(function(r) { return r.json(); })\n' +
+        '        .then(function(data) {\n' +
+        '            if (data.error || !data.device) return;\n' +
+        '            var d = data.device;\n' +
+        '            var battEl  = row.querySelector(\'.ts-batt\');\n' +
+        '            var wifiEl  = row.querySelector(\'.ts-wifi\');\n' +
+        '            var sleepEl = row.querySelector(\'.ts-sleep\');\n' +
+        '            if (battEl)  battEl.textContent  = "\\uD83D\\uDD0B " + (d.percent_charged != null ? Math.round(d.percent_charged) + "%" : "\\u2013");\n' +
+        '            if (wifiEl)  wifiEl.textContent  = "\\uD83D\\uDCF6 " + (d.wifi_strength   != null ? d.wifi_strength + "%" : "\\u2013");\n' +
+        '            if (sleepEl) sleepEl.textContent = d.sleep_mode_enabled ? "\\uD83D\\uDE34 An" : "";\n' +
+        '        })\n' +
+        '        .catch(function() {});\n' +
+        '}\n' +
+        'function fmtUptime(s) {\n' +
+        '    var d = Math.floor(s/86400), h = Math.floor((s%86400)/3600), m = Math.floor((s%3600)/60), sc = s%60;\n' +
+        '    if (d > 0) return d+"d "+h+"h "+m+"m";\n' +
+        '    if (h > 0) return h+"h "+m+"m "+sc+"s";\n' +
+        '    return m+"m "+sc+"s";\n' +
+        '}\n' +
+        'function srvFetchStatus() {\n' +
+        '    var wrap = document.getElementById("srv-systemctl-wrap");\n' +
+        '    var el   = document.getElementById("srv-systemctl");\n' +
+        '    if (!el) return;\n' +
+        '    if (wrap) wrap.style.display = "block";\n' +
+        '    el.textContent = "Wird geladen\\u2026";\n' +
+        '    fetch("/admin/server/systemctl-status")\n' +
+        '        .then(function(r) { return r.json(); })\n' +
+        '        .then(function(d) { el.textContent = d.output || "(keine Ausgabe)"; })\n' +
+        '        .catch(function() { el.textContent = "Fehler beim Laden."; });\n' +
+        '}\n' +
+        'function getCsrf() {\n' +
+        '    var el = document.querySelector("[data-csrf]");\n' +
+        '    return el ? el.getAttribute("data-csrf") : "";\n' +
+        '}\n' +
+        'function srvConfirmRestart(type) {\n' +
+        '    var isDeskview = type === "deskview";\n' +
+        '    var modal = document.createElement("div");\n' +
+        '    modal.className = "srv-modal-bg";\n' +
+        '    modal.innerHTML =\n' +
+        '        \'<div class="srv-modal">\' +\n' +
+        '        \'<div class="srv-modal-icon">\' + (isDeskview ? "\\u21BA" : "\\u23FB") + \'</div>\' +\n' +
+        '        \'<div class="srv-modal-title">\' + (isDeskview ? "DeskView neu starten?" : "Linux neu starten?") + \'</div>\' +\n' +
+        '        \'<div class="srv-modal-desc">\' +\n' +
+        '            (isDeskview\n' +
+        '                ? "Der DeskView-Dienst wird neu gestartet.<br>Du wirst automatisch weitergeleitet sobald er wieder l\\u00e4uft."\n' +
+        '                : "Der gesamte Linux-Server wird neu gestartet.<br>Alle Verbindungen werden getrennt. Dies dauert einige Minuten.") +\n' +
+        '        \'</div>\' +\n' +
+        '        \'<label class="srv-modal-check">\' +\n' +
+        '        \'<input type="checkbox" id="srv-confirm-cb">\' +\n' +
+        '        \'<span>\' + (isDeskview ? "Ja, DeskView jetzt neu starten" : "Ja, Linux-Server jetzt neu starten") + \'</span>\' +\n' +
+        '        \'</label>\' +\n' +
+        '        \'<div class="srv-modal-btns">\' +\n' +
+        '        \'<button class="srv-modal-cancel">Abbrechen</button>\' +\n' +
+        '        \'<button class="srv-modal-confirm" id="srv-confirm-btn" disabled style="background:\' + (isDeskview ? "#f59e0b" : "#dc2626") + \';">Neu starten</button>\' +\n' +
+        '        \'</div></div>\';\n' +
+        '    document.body.appendChild(modal);\n' +
+        '    var cb  = modal.querySelector("#srv-confirm-cb");\n' +
+        '    var btn = modal.querySelector("#srv-confirm-btn");\n' +
+        '    cb.addEventListener("change", function() { btn.disabled = !cb.checked; });\n' +
+        '    modal.querySelector(".srv-modal-cancel").addEventListener("click", function() { modal.remove(); });\n' +
+        '    modal.addEventListener("click", function(e) { if (e.target === modal) modal.remove(); });\n' +
+        '    btn.addEventListener("click", function() { modal.remove(); isDeskview ? srvDoRestart() : srvDoReboot(); });\n' +
+        '}\n' +
+        'function srvDoRestart() {\n' +
+        '    var overlay = srvShowOverlay("DeskView wird neu gestartet\\u2026", [\n' +
+        '        { id: "s1", text: "Neustart-Befehl senden\\u2026" },\n' +
+        '        { id: "s2", text: "Server startet neu\\u2026" },\n' +
+        '        { id: "s3", text: "Warte bis DeskView wieder l\\u00e4uft\\u2026" },\n' +
+        '        { id: "s4", text: "Weiterleitung\\u2026" }\n' +
+        '    ]);\n' +
+        '    fetch("/admin/server/restart", { method: "POST", headers: { "Content-Type": "application/x-www-form-urlencoded" }, body: "_csrf=" + encodeURIComponent(getCsrf()) })\n' +
+        '        .then(function(r) {\n' +
+        '            if (!r.ok) throw new Error("HTTP " + r.status);\n' +
+        '            srvStepDone(overlay, "s1"); srvStepActive(overlay, "s2");\n' +
+        '            setTimeout(function() {\n' +
+        '                srvStepDone(overlay, "s2"); srvStepActive(overlay, "s3");\n' +
+        '                var tries = 0;\n' +
+        '                function poll() {\n' +
+        '                    fetch("/admin/server/stats", { cache: "no-store" })\n' +
+        '                        .then(function(r) {\n' +
+        '                            if (r.ok) { srvStepDone(overlay, "s3"); srvStepActive(overlay, "s4"); setTimeout(function() { window.location.href = "/admin"; }, 1000); }\n' +
+        '                            else { if (++tries < 60) setTimeout(poll, 2000); }\n' +
+        '                        })\n' +
+        '                        .catch(function() { if (++tries < 60) setTimeout(poll, 2000); });\n' +
+        '                }\n' +
+        '                poll();\n' +
+        '            }, 4000);\n' +
+        '        })\n' +
+        '        .catch(function() {\n' +
+        '            var box = overlay.querySelector(".srv-overlay-box");\n' +
+        '            if (box) box.innerHTML += \'<p style="color:#dc2626;margin-top:16px;font-size:13px;">Fehler beim Senden des Befehls.</p>\';\n' +
+        '        });\n' +
+        '}\n' +
+        'function srvDoReboot() {\n' +
+        '    var overlay = srvShowOverlay("Linux-Server wird neu gestartet\\u2026", [\n' +
+        '        { id: "r1", text: "Neustart-Befehl wird gesendet\\u2026" },\n' +
+        '        { id: "r2", text: "Server f\\u00e4hrt herunter\\u2026" },\n' +
+        '        { id: "r3", text: "Bitte warte \\u2014 dauert ca. 1\\u20132 Minuten" }\n' +
+        '    ]);\n' +
+        '    fetch("/admin/server/reboot", { method: "POST", headers: { "Content-Type": "application/x-www-form-urlencoded" }, body: "_csrf=" + encodeURIComponent(getCsrf()) })\n' +
+        '        .then(function() {\n' +
+        '            srvStepDone(overlay, "r1"); srvStepActive(overlay, "r2");\n' +
+        '            setTimeout(function() { srvStepDone(overlay, "r2"); srvStepActive(overlay, "r3"); }, 3000);\n' +
+        '        })\n' +
+        '        .catch(function() {\n' +
+        '            var box = overlay.querySelector(".srv-overlay-box");\n' +
+        '            if (box) box.innerHTML += \'<p style="color:#dc2626;margin-top:16px;font-size:13px;">Fehler beim Senden des Befehls.</p>\';\n' +
+        '        });\n' +
+        '}\n' +
+        'function srvShowOverlay(title, steps) {\n' +
+        '    var overlay = document.createElement("div");\n' +
+        '    overlay.className = "srv-overlay";\n' +
+        '    var html = "";\n' +
+        '    for (var i = 0; i < steps.length; i++) {\n' +
+        '        html += \'<div class="srv-step" id="ovl-\' + steps[i].id + \'"><span class="srv-step-icon">\\u23F3</span><span>\' + steps[i].text + \'</span></div>\';\n' +
+        '    }\n' +
+        '    overlay.innerHTML = \'<div class="srv-overlay-box"><div class="srv-spinner"></div><div style="font-size:17px;font-weight:700;margin-bottom:20px;">\' + title + \'</div><div style="text-align:left;">\' + html + \'</div></div>\';\n' +
+        '    document.body.appendChild(overlay);\n' +
+        '    srvStepActive(overlay, steps[0].id);\n' +
+        '    return overlay;\n' +
+        '}\n' +
+        'function srvStepDone(overlay, id) { var el = overlay.querySelector("#ovl-" + id + " .srv-step-icon"); if (el) el.textContent = "\\u2705"; }\n' +
+        'function srvStepActive(overlay, id) { var el = overlay.querySelector("#ovl-" + id + " .srv-step-icon"); if (el) el.textContent = "\\u23F3"; }\n' +
+        'function srvApply(d) {\n' +
+        '    function el(id) { return document.getElementById(id); }\n' +
+        '    function set(id, val) { var e = el(id); if (e) e.textContent = val; }\n' +
+        '    var cpuBar = el("srv-cpu-bar"), ramBar = el("srv-ram-bar");\n' +
+        '    set("srv-cpu",        d.cpu + "%");\n' +
+        '    set("srv-cpu-cores",  d.cpuCores);\n' +
+        '    set("srv-load",       d.load1 + " / " + d.load5 + " / " + d.load15 + " (1/5/15 min)");\n' +
+        '    set("srv-ram",        d.ramPct + "%");\n' +
+        '    set("srv-ram-detail", d.ramUsed + " MB / " + d.ramTotal + " MB");\n' +
+        '    set("srv-uptime",     fmtUptime(d.uptime));\n' +
+        '    set("srv-sys-uptime", fmtUptime(d.sysUptime));\n' +
+        '    set("srv-heap",       d.heapUsed + " / " + d.heapTotal + " MB");\n' +
+        '    set("srv-rss",        d.rss + " MB");\n' +
+        '    set("srv-node",       d.nodeVer);\n' +
+        '    set("srv-host",       d.hostname);\n' +
+        '    set("srv-platform",   d.platform);\n' +
+        '    set("srv-ip",         (d.ips && d.ips.length) ? d.ips.join(", ") : "\\u2013");\n' +
+        '    if (cpuBar) { cpuBar.style.width = d.cpu + "%"; cpuBar.style.background = d.cpu > 80 ? "#dc2626" : d.cpu > 50 ? "#f59e0b" : "#2563eb"; }\n' +
+        '    if (ramBar) { ramBar.style.width = d.ramPct + "%"; ramBar.style.background = d.ramPct > 85 ? "#dc2626" : d.ramPct > 60 ? "#f59e0b" : "#059669"; }\n' +
+        '    var logEl = el("srv-log");\n' +
+        '    if (logEl && d.logs) {\n' +
+        '        var atBottom = logEl.scrollTop + logEl.clientHeight >= logEl.scrollHeight - 10;\n' +
+        '        var lines = [];\n' +
+        '        for (var i = 0; i < d.logs.length; i++) {\n' +
+        '            var l = d.logs[i];\n' +
+        '            lines.push("[" + new Date(l.t).toLocaleTimeString("de-DE") + "] [" + l.level.toUpperCase() + "] " + l.msg);\n' +
+        '        }\n' +
+        '        logEl.textContent = lines.join("\\n");\n' +
+        '        if (atBottom) logEl.scrollTop = logEl.scrollHeight;\n' +
+        '    }\n' +
+        '    var ageEl = el("srv-log-age");\n' +
+        '    if (ageEl) ageEl.textContent = new Date().toLocaleTimeString("de-DE");\n' +
+        '}\n' +
+        'var _srvTimer = null;\n' +
+        'function srvFetch() {\n' +
+        '    fetch("/admin/server/stats", { cache: "no-store" })\n' +
+        '        .then(function(r) {\n' +
+        '            if (r.ok) return r.json();\n' +
+        '            return Promise.reject("HTTP " + r.status + (r.redirected ? " (redirect \\u2013 Sitzung abgelaufen?)" : ""));\n' +
+        '        })\n' +
+        '        .then(function(d) {\n' +
+        '            var logEl = document.getElementById("srv-log");\n' +
+        '            if (logEl) logEl.style.color = "";\n' +
+        '            srvApply(d);\n' +
+        '        })\n' +
+        '        .catch(function(reason) {\n' +
+        '            var logEl = document.getElementById("srv-log");\n' +
+        '            if (!logEl) return;\n' +
+        '            var msg = typeof reason === "string" ? reason : (reason && reason.message ? reason.message : String(reason));\n' +
+        '            logEl.textContent = "Fehler beim Laden: " + msg;\n' +
+        '            logEl.style.color = "#dc2626";\n' +
+        '        });\n' +
+        '}\n' +
+        'function srvStartPolling() { if (_srvTimer) return; srvFetch(); _srvTimer = setInterval(srvFetch, 10000); }\n' +
+        'function srvStopPolling() { if (_srvTimer) { clearInterval(_srvTimer); _srvTimer = null; } }\n' +
+        'document.querySelectorAll(".term-live-row").forEach(function(row) {\n' +
+        '    var tid = row.getAttribute("data-tid");\n' +
+        '    if (!tid) return;\n' +
+        '    fetchTerminalStatus(tid, row);\n' +
+        '    var ms = parseInt(row.getAttribute("data-interval") || "30", 10) * 60 * 1000;\n' +
+        '    if (_tsTimers[tid]) clearInterval(_tsTimers[tid]);\n' +
+        '    _tsTimers[tid] = setInterval(function() { fetchTerminalStatus(tid, row); }, ms);\n' +
+        '});\n' +
+        'var _logInit = document.getElementById("srv-log");\n' +
+        'if (_logInit) { _logInit.textContent = "Laden\\u2026"; _logInit.style.color = ""; }\n' +
+        'srvStartPolling();\n' +
+        'document.addEventListener("visibilitychange", function() { if (document.hidden) srvStopPolling(); else srvStartPolling(); });\n'
+    );
 });
 
 app.get('/admin/server/stats', requireAdmin, requirePermission('server.view'), (req, res) => {
