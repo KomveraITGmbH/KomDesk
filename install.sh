@@ -5,6 +5,7 @@ APP_DIR="/opt/komvera-deskview"
 SERVICE_NAME="komvera-deskview"
 GIT_REPO="https://github.com/JasonDarrKomvera/KomveraDeskView.git"
 NODE_MAJOR="20"
+NGINX_CONF="/etc/nginx/sites-available/${SERVICE_NAME}"
 
 # ──────────────────────────────────────────────
 # System prüfen
@@ -35,9 +36,9 @@ echo "╔═══════════════════════�
 echo "║         HTTPS / SSL Einrichtung          ║"
 echo "╚══════════════════════════════════════════╝"
 echo ""
-echo "Möchtest du HTTPS mit Let's Encrypt einrichten?"
+echo "Möchtest du HTTPS mit nginx + Let's Encrypt einrichten?"
 echo "  → Voraussetzung: Eine Domain mit A-Record auf diesen Server"
-echo "  → Port 443 muss vom Router auf diesen Server weitergeleitet sein"
+echo "  → Port 80 und 443 müssen vom Router auf diesen Server weitergeleitet sein"
 echo "  → Ohne HTTPS läuft die App über HTTP auf Port 80"
 echo ""
 
@@ -79,46 +80,19 @@ fi
 echo ""
 
 # ──────────────────────────────────────────────
-# Basispakete + Firewall
+# Pakete installieren
 # ──────────────────────────────────────────────
-echo "==> Basispakete werden installiert..."
+echo "==> Pakete werden installiert..."
 sudo apt-get update -qq
-sudo apt-get install -y curl ca-certificates gnupg git ufw
+sudo apt-get install -y curl ca-certificates gnupg git ufw nginx
 
+# ──────────────────────────────────────────────
+# Firewall konfigurieren
+# ──────────────────────────────────────────────
 echo "==> Firewall wird konfiguriert..."
 sudo ufw allow OpenSSH
-sudo ufw allow 80/tcp
-sudo ufw allow 443/tcp
+sudo ufw allow 'Nginx Full'
 sudo ufw --force enable
-
-# ──────────────────────────────────────────────
-# Let's Encrypt – ZUERST, bevor alles andere läuft
-# ──────────────────────────────────────────────
-if [ "$HTTPS_ENABLED" = true ]; then
-    echo ""
-    echo "==> Apache + Certbot werden installiert..."
-    sudo apt-get install -y apache2 certbot python3-certbot-apache
-
-    echo "==> Apache wird gestartet..."
-    sudo systemctl start apache2
-
-    echo "==> Alte Zertifikatskonfiguration bereinigen..."
-    sudo certbot delete --cert-name "$DOMAIN" --non-interactive 2>/dev/null || true
-
-    echo "==> SSL-Zertifikat wird beantragt (via Webroot)..."
-    sudo certbot certonly --webroot -w /var/www/html \
-        -d "$DOMAIN" \
-        --email "$LE_EMAIL" \
-        --agree-tos \
-        --non-interactive
-
-    echo "==> Apache wird gestoppt und deaktiviert..."
-    sudo systemctl stop apache2
-    sudo systemctl disable apache2
-
-    echo ""
-    echo "✅ Zertifikat erhalten: /etc/letsencrypt/live/${DOMAIN}/"
-fi
 
 # ──────────────────────────────────────────────
 # Node.js installieren
@@ -161,17 +135,44 @@ echo "==> npm install läuft..."
 npm install --omit=dev
 
 # ──────────────────────────────────────────────
+# nginx konfigurieren
+# ──────────────────────────────────────────────
+echo "==> nginx wird konfiguriert..."
+
+if [ "$HTTPS_ENABLED" = true ]; then
+    SERVER_NAME="$DOMAIN"
+else
+    SERVER_NAME="_"
+fi
+
+sudo tee "$NGINX_CONF" > /dev/null <<EOF
+server {
+    listen 80;
+    server_name ${SERVER_NAME};
+
+    location / {
+        proxy_pass http://127.0.0.1:3000;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade \$http_upgrade;
+        proxy_set_header Connection "upgrade";
+        proxy_set_header Host \$host;
+        proxy_set_header X-Real-IP \$remote_addr;
+        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto \$scheme;
+        proxy_read_timeout 86400;
+    }
+}
+EOF
+
+sudo ln -sf "$NGINX_CONF" /etc/nginx/sites-enabled/${SERVICE_NAME}
+sudo rm -f /etc/nginx/sites-enabled/default
+sudo nginx -t
+sudo systemctl restart nginx
+
+# ──────────────────────────────────────────────
 # systemd Service
 # ──────────────────────────────────────────────
 echo "==> systemd Service wird erstellt..."
-
-if [ "$HTTPS_ENABLED" = true ]; then
-    EXTRA_ENV="Environment=NODE_ENV=production
-Environment=HTTPS_ENABLED=true
-Environment=DOMAIN=${DOMAIN}"
-else
-    EXTRA_ENV="Environment=NODE_ENV=production"
-fi
 
 sudo tee /etc/systemd/system/${SERVICE_NAME}.service > /dev/null <<EOF
 [Unit]
@@ -185,7 +186,7 @@ ExecStart=$(which node) ${APP_DIR}/server.js
 Restart=always
 RestartSec=5
 User=${USER}
-${EXTRA_ENV}
+Environment=NODE_ENV=production
 
 [Install]
 WantedBy=multi-user.target
@@ -216,6 +217,29 @@ else
 fi
 
 # ──────────────────────────────────────────────
+# Let's Encrypt
+# ──────────────────────────────────────────────
+if [ "$HTTPS_ENABLED" = true ]; then
+    echo ""
+    echo "==> Certbot wird installiert..."
+    sudo apt-get install -y certbot python3-certbot-nginx
+
+    echo "==> Alte Zertifikatskonfiguration bereinigen..."
+    sudo certbot delete --cert-name "$DOMAIN" --non-interactive 2>/dev/null || true
+
+    echo "==> SSL-Zertifikat wird beantragt (via nginx)..."
+    sudo certbot --nginx \
+        -d "$DOMAIN" \
+        --email "$LE_EMAIL" \
+        --agree-tos \
+        --non-interactive \
+        --redirect
+
+    echo ""
+    echo "✅ Zertifikat erhalten: /etc/letsencrypt/live/${DOMAIN}/"
+fi
+
+# ──────────────────────────────────────────────
 # Service starten
 # ──────────────────────────────────────────────
 echo "==> Service wird gestartet..."
@@ -243,7 +267,7 @@ if [ "$HTTPS_ENABLED" = true ]; then
     echo "   App erreichbar unter: https://${DOMAIN}"
 else
     SERVER_IP=$(hostname -I | awk '{print $1}')
-    echo "   App erreichbar unter: http://${SERVER_IP}:3000"
+    echo "   App erreichbar unter: http://${SERVER_IP}"
 fi
 
 echo ""

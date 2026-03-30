@@ -1,5 +1,4 @@
 const http    = require('http');
-const https   = require('https');
 const express = require('express');
 const cors = require('cors');
 const session = require('express-session');
@@ -6250,26 +6249,7 @@ START
 
         setInterval(runSeatAutoClear, 60 * 1000);
 
-        const httpsEnabled = process.env.HTTPS_ENABLED === 'true';
-        const domain       = (process.env.DOMAIN || '').trim();
-
-        let mainServer;
-        if (httpsEnabled && domain) {
-            const certDir = `/etc/letsencrypt/live/${domain}`;
-            let tlsOptions;
-            try {
-                tlsOptions = {
-                    key:  fs.readFileSync(`${certDir}/privkey.pem`),
-                    cert: fs.readFileSync(`${certDir}/fullchain.pem`)
-                };
-            } catch (e) {
-                console.error('[HTTPS] Zertifikat nicht gefunden:', e.message);
-                process.exit(1);
-            }
-            mainServer = https.createServer(tlsOptions, app);
-        } else {
-            mainServer = http.createServer(app);
-        }
+        const mainServer = http.createServer(app);
 
         const wss = new WebSocketServer({ noServer: true });
 
