@@ -3196,6 +3196,7 @@ app.get('/admin', requireAdmin, requirePermission('dashboard.view'), (req, res) 
     // --- Server-Status ---
     const serverHtml = hasPermission(req, 'server.view') ? `
         <div class="card db-hero" style="grid-column:1/-1;">
+            <div id="srv-error-banner" style="display:none;background:#dc2626;color:#fff;padding:10px 14px;border-radius:10px;margin-bottom:16px;font-size:13px;font-weight:600;"></div>
             <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:20px;flex-wrap:wrap;gap:10px;">
                 <div class="db-card-title" style="margin:0;">⚙️ DeskView Server</div>
                 <div style="display:flex;gap:8px;flex-wrap:wrap;" data-csrf="${getCsrfToken(req)}">
@@ -3529,11 +3530,11 @@ app.get('/admin', requireAdmin, requirePermission('dashboard.view'), (req, res) 
                     srvApply(d);
                 })
                 .catch(function(reason) {
-                    var logEl = document.getElementById('srv-log');
-                    if (!logEl) return;
                     var msg = (typeof reason === 'string') ? reason : (reason && reason.message ? reason.message : String(reason));
-                    logEl.textContent = 'Fehler beim Laden der Statistiken: ' + msg;
-                    logEl.style.color = '#dc2626';
+                    var banner = document.getElementById('srv-error-banner');
+                    if (banner) { banner.style.display = 'block'; banner.textContent = 'Stats-Fehler: ' + msg + ' – Seite neu laden oder neu anmelden.'; }
+                    var logEl = document.getElementById('srv-log');
+                    if (logEl) { logEl.textContent = 'Fehler: ' + msg; logEl.style.color = '#dc2626'; }
                 });
         }
         function srvStartPolling() {
@@ -3545,7 +3546,8 @@ app.get('/admin', requireAdmin, requirePermission('dashboard.view'), (req, res) 
             if (_srvTimer) { clearInterval(_srvTimer); _srvTimer = null; }
         }
 
-        (function() {
+        function _srvInit() {
+            if (_srvTimer) return;
             document.querySelectorAll('.term-live-row').forEach(function(row) {
                 var tid = row.getAttribute('data-tid');
                 if (!tid) return;
@@ -3557,7 +3559,9 @@ app.get('/admin', requireAdmin, requirePermission('dashboard.view'), (req, res) 
             var logEl = document.getElementById('srv-log');
             if (logEl) { logEl.textContent = 'Laden...'; logEl.style.color = ''; }
             srvStartPolling();
-        })();
+        }
+        _srvInit();
+        document.addEventListener('DOMContentLoaded', _srvInit);
 
         document.addEventListener('visibilitychange', function() {
             if (document.hidden) { srvStopPolling(); } else { srvStartPolling(); }
