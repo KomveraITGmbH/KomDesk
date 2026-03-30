@@ -3543,7 +3543,7 @@ app.get('/admin', requireAdmin, requirePermission('dashboard.view'), (req, res) 
             if (_srvTimer) { clearInterval(_srvTimer); _srvTimer = null; }
         }
 
-        document.addEventListener('DOMContentLoaded', function() {
+        (function() {
             document.querySelectorAll('.term-live-row').forEach(function(row) {
                 var tid = row.getAttribute('data-tid');
                 if (!tid) return;
@@ -3555,7 +3555,7 @@ app.get('/admin', requireAdmin, requirePermission('dashboard.view'), (req, res) 
             var logEl = document.getElementById('srv-log');
             if (logEl) { logEl.textContent = 'Laden...'; logEl.style.color = ''; }
             srvStartPolling();
-        });
+        })();
 
         document.addEventListener('visibilitychange', function() {
             if (document.hidden) { srvStopPolling(); } else { srvStartPolling(); }
