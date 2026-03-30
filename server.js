@@ -3666,8 +3666,7 @@ app.get('/admin/terminals', requireAdmin, requirePermission('terminals.view'), (
                 </select>
 
                 <div id="trmnl_polling_${escapeHtml(t.id)}" style="display:${(t.trmnlMode||'none')==='polling' ? 'block' : 'none'}">
-                    <label>Plugin UUID <span style="font-weight:400;opacity:.6;">(aus TRMNL Plugin-Einstellungen)</span></label>
-                    <input type="text" name="trmnlPluginUuid" value="${escapeHtml(t.trmnlPluginUuid || '')}" placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx">
+                    <p style="font-size:13px;opacity:.7;margin-bottom:8px;">TRMNL fragt die Daten selbst ab. Kein Push von DeskView nötig — Intervall direkt in TRMNL einstellen.</p>
                 </div>
 
                 <div id="trmnl_webhook_${escapeHtml(t.id)}" style="display:${(t.trmnlMode||'none')==='webhook' ? 'block' : 'none'}">
@@ -3834,7 +3833,7 @@ app.post('/admin/terminals/create', requireAdmin, requirePermission('terminals.c
         const name = String(req.body.name || '').trim();
         if (!name) return res.status(400).send('Name fehlt');
         const id = 'terminal_' + Date.now();
-        terminals[id] = { id, name, trmnlMode: 'none', trmnlWebhookUrl: '', trmnlPluginUuid: '', trmnlDeviceApiKey: '', trmnlDeviceMac: '', trmnlSleepStart: '19:00', trmnlSleepEnd: '07:00' };
+        terminals[id] = { id, name, trmnlMode: 'none', trmnlWebhookUrl: '', trmnlDeviceApiKey: '', trmnlDeviceMac: '', trmnlSleepStart: '19:00', trmnlSleepEnd: '07:00' };
         saveTerminals();
         return res.redirect('/admin/terminals');
     } catch (err) {
@@ -3850,7 +3849,6 @@ app.post('/admin/terminals/update', requireAdmin, requirePermission('terminals.e
         terminal.name = String(req.body.name || '').trim() || terminal.name;
         terminal.trmnlMode = ['none','polling','webhook'].includes(req.body.trmnlMode) ? req.body.trmnlMode : 'none';
         terminal.trmnlWebhookUrl = String(req.body.trmnlWebhookUrl || '').trim();
-        terminal.trmnlPluginUuid = String(req.body.trmnlPluginUuid || '').trim();
         const rawApiKey = String(req.body.trmnlDeviceApiKey || '').trim();
         terminal.trmnlDeviceApiKey = rawApiKey ? encryptValue(rawApiKey) : (terminal.trmnlDeviceApiKey || '');
         terminal.trmnlDeviceMac = String(req.body.trmnlDeviceMac || '').trim();
