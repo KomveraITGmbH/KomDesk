@@ -3303,8 +3303,8 @@ app.get('/admin/rooms', requireAdmin, requirePermission('rooms.view'), (req, res
                             <h3 style="font-size:15px;margin:0 0 10px 0;">Sleep Schedule <span style="font-weight:400;opacity:.6;font-size:13px;">(optional – spart Akku nachts)</span></h3>
                             <p style="font-size:13px;opacity:.7;margin-bottom:10px;">Das Gerät schläft außerhalb der Arbeitszeiten und aktualisiert nicht. Benötigt den TRMNL Device API Key.</p>
 
-                            <label>Device API Key <span style="font-weight:400;opacity:.6;">(aus TRMNL → Dein Gerät)</span></label>
-                            <input type="text" name="trmnlDeviceApiKey" value="${escapeHtml(room.trmnlDeviceApiKey || '')}" placeholder="Device Bearer Token aus TRMNL">
+                            <label>TRMNL Account API Key <span style="font-weight:400;opacity:.6;">(Account → Settings → API Key)</span></label>
+                            <input type="text" name="trmnlDeviceApiKey" value="${escapeHtml(room.trmnlDeviceApiKey || '')}" placeholder="Account API Key aus TRMNL Settings">
 
                             <label>Device MAC-Adresse</label>
                             <input type="text" name="trmnlDeviceMac" value="${escapeHtml(room.trmnlDeviceMac || '')}" placeholder="z. B. 08:92:72:65:F8:9C">
