@@ -7,7 +7,17 @@
     "openRoom": "Open Room →"
   },
   "booking": {
-    "selectSeat": "Please select a seat."
+    "selectSeat": "Please select a seat.",
+    "backToRoom": "Back to room overview",
+    "checkedIn": "Checked In!",
+    "nowSitsAt": "is now sitting at",
+    "yourName": "Your Name",
+    "jobTitle": "Job Title",
+    "optional": "(optional)",
+    "claimSeat": "Claim Seat",
+    "autoCheckinHint": "After login, the seat will be automatically assigned.",
+    "jobTitlePlaceholder": "e.g. Developer",
+    "defaultJobTitle": "Employee"
   },
   "nav": {
     "dashboard": "Dashboard",
@@ -56,7 +66,15 @@
     "success": "Success",
     "actions": "Actions",
     "name": "Name",
-    "status": "Status"
+    "status": "Status",
+    "unknown": "Unknown"
+  },
+  "seatClearOptions": {
+    "never": "Never",
+    "1h": "1 Hour",
+    "2h": "2 Hours",
+    "8h": "8 Hours",
+    "24h": "24 Hours (1 Day)"
   },
   "dashboard": {
     "title": "Dashboard",
@@ -187,7 +205,11 @@
     "secretHint": "The suggested value is already cryptographically strong. You can use it or replace it with your own.",
     "microsoftOptional": "Microsoft / Entra",
     "enableMicrosoftLogin": "Enable Microsoft Login",
-    "clientIdPlaceholder": "Leave empty if not needed"
+    "clientIdPlaceholder": "Leave empty if not needed",
+    "hintMinLen": "At least 8 characters",
+    "hintUppercase": "At least one uppercase letter",
+    "hintNumber": "At least one number",
+    "hintMismatch": "✗ Passwords do not match"
   },
   "account": {
     "title": "My Account",
@@ -238,7 +260,18 @@
     "username": "Username",
     "password": "Password",
     "connect": "Connect",
-    "disconnect": "Disconnect"
+    "disconnect": "Disconnect",
+    "connecting": "Connecting...",
+    "timeout": "Timeout: No response from SSH server.",
+    "checkSsh": "Check if SSH is running: sudo systemctl status ssh",
+    "noToken": "Error: No token received.",
+    "errorPrefix": "Error: ",
+    "disconnected": "Disconnected.",
+    "closed": "Connection closed.",
+    "wsError": "WebSocket error.",
+    "connError": "Connection error.",
+    "separated": "Disconnected.",
+    "consoleHeader": "SSH Console \u2014 localhost"
   },
   "links": {
     "title": "Room Links",
@@ -325,7 +358,14 @@
     "deviceNotFound": "Device not found",
     "apiKeyAndMacMissing2": "API Key and MAC missing",
     "trmnlError": "TRMNL Error:",
-    "deviceWithMacNotFound": "Device with MAC {mac} not found"
+    "deviceWithMacNotFound": "Device with MAC {mac} not found",
+    "noAuthCode": "No authorization code received from Microsoft.",
+    "noAccessToken": "No access token received from Microsoft.",
+    "roomGone": "Room no longer available.",
+    "noPendingRoom": "No valid room found in session.",
+    "noPendingSeat": "No valid seat found in session.",
+    "saveUserFailed": "Could not save user.",
+    "microsoftNotConfiguredLong": "Microsoft / Entra is not configured."
   },
   "terminals": {
     "title": "Terminals",

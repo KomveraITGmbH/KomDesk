@@ -269,11 +269,11 @@ const DEFAULT_CONFIG = {
 };
 
 const SEAT_CLEAR_OPTIONS = [
-    { value: 'never', label: 'Nie' },
-    { value: '1h',    label: '1 Stunde' },
-    { value: '2h',    label: '2 Stunden' },
-    { value: '8h',    label: '8 Stunden' },
-    { value: '24h',   label: '24 Stunden (1 Tag)' },
+    { value: 'never' },
+    { value: '1h' },
+    { value: '2h' },
+    { value: '8h' },
+    { value: '24h' },
     { value: '1w',    label: '1 Woche' },
 ];
 
@@ -671,7 +671,7 @@ function requirePermission(permission) {
 
         const L2 = loadLocale();
         return res.status(403).send(`
-            <html lang="de">
+            <html lang="${escapeHtml(appConfig.language || 'de')}">
             <head>
                 <meta charset="UTF-8">
                 <title>${escapeHtml(L2.errors?.noPermission || 'No Permission')}</title>
@@ -1931,7 +1931,7 @@ app.get('/', (req, res) => {
 
     res.send(`
         <!DOCTYPE html>
-        <html lang="de">
+        <html lang="${escapeHtml(appConfig.language || 'de')}">
         <head>
             <meta charset="UTF-8">
             <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -2242,6 +2242,7 @@ app.get('/admin/setup', (req, res) => {
         return res.redirect('/admin/login');
     }
 
+    const L = loadLocale();
     getCsrfToken(req);
     req.session.save(() => {
     const generatedSecret = generateStrongSecret();
@@ -2249,11 +2250,13 @@ app.get('/admin/setup', (req, res) => {
     const logoExists = fs.existsSync(LOGO_FILE);
     res.send(`
         <!DOCTYPE html>
-        <html lang="de">
+        <html lang="${escapeHtml(appConfig.language || 'de')}">
         <head>
             <meta charset="UTF-8">
             <meta name="viewport" content="width=device-width, initial-scale=1.0">
-            <title>Ersteinrichtung – DeskView</title>
+            <title>${escapeHtml(L.setup?.title || 'Initial Setup')} – DeskView</title>
+            <script>window._LOCALE=${JSON.stringify(L)};</script>
+            <script>(function(){var L=window._LOCALE||{};function t(k){return k.split('.').reduce(function(o,p){return o&&o[p]},L)||k;}document.addEventListener('DOMContentLoaded',function(){document.querySelectorAll('[data-i18n]').forEach(function(el){var v=t(el.getAttribute('data-i18n'));if(v!==el.getAttribute('data-i18n'))el.textContent=v;});document.querySelectorAll('[data-i18n-placeholder]').forEach(function(el){var v=t(el.getAttribute('data-i18n-placeholder'));if(v!==el.getAttribute('data-i18n-placeholder'))el.placeholder=v;});});})();</script>
             <style>
                 * { box-sizing: border-box; margin: 0; padding: 0; }
                 :root {
@@ -2456,7 +2459,7 @@ app.get('/admin/setup', (req, res) => {
                             : `<span class="setup-logo-text">Komvera DeskView</span>`
                         }
                     </div>
-                    <button class="theme-btn" onclick="toggleTheme()">&#9790; Modus</button>
+                    <button class="theme-btn" onclick="toggleTheme()">${escapeHtml(L.sidebar?.themeToggle || '☽ Mode')}</button>
                 </div>
 
                 <h1 data-i18n="setup.title">Ersteinrichtung</h1>
@@ -2482,13 +2485,13 @@ app.get('/admin/setup', (req, res) => {
                             <label data-i18n="setup.password">Passwort</label>
                             <input type="password" name="password" id="setup_pw" placeholder="Mindestens 8 Zeichen" data-i18n-placeholder="setup.passwordPlaceholder" required oninput="checkPw()">
                             <div id="pw_hints" style="margin-top:6px;font-size:12px;line-height:1.8;display:none;">
-                                <div id="ph_len"  style="color:var(--muted);">✗ Mindestens 8 Zeichen</div>
-                                <div id="ph_upper" style="color:var(--muted);">✗ Mindestens ein Großbuchstabe</div>
-                                <div id="ph_num"  style="color:var(--muted);">✗ Mindestens eine Zahl</div>
+                                <div id="ph_len"  style="color:var(--muted);" data-i18n="setup.hintMinLen"></div>
+                                <div id="ph_upper" style="color:var(--muted);" data-i18n="setup.hintUppercase"></div>
+                                <div id="ph_num"  style="color:var(--muted);" data-i18n="setup.hintNumber"></div>
                             </div>
                             <label style="margin-top:10px;" data-i18n="setup.passwordRepeat">Passwort wiederholen</label>
                             <input type="password" name="confirmPassword" id="setup_pw2" placeholder="Passwort bestätigen" data-i18n-placeholder="setup.passwordConfirmPlaceholder" required oninput="checkMatch()">
-                            <div id="pw_match_err" style="color:#dc2626;font-size:12px;margin-top:4px;display:none;">✗ Passwörter stimmen nicht überein</div>
+                            <div id="pw_match_err" style="color:#dc2626;font-size:12px;margin-top:4px;display:none;" data-i18n="setup.hintMismatch"></div>
                         </div>
 
                         <div class="card">
@@ -2540,19 +2543,22 @@ app.get('/admin/setup', (req, res) => {
                     document.documentElement.setAttribute('data-theme', next);
                     localStorage.setItem('deskview-theme', next);
                 }
+                var _S = (window._LOCALE && window._LOCALE.setup) ? window._LOCALE.setup : {};
+                var _E = (window._LOCALE && window._LOCALE.errors) ? window._LOCALE.errors : {};
                 function checkPw() {
                     var pw = document.getElementById('setup_pw').value;
                     var hints = document.getElementById('pw_hints');
                     if (!pw) { hints.style.display = 'none'; return; }
                     hints.style.display = '';
-                    function setHint(id, ok, msg) {
+                    function setHint(id, ok, msgKey) {
                         var el = document.getElementById(id);
+                        var msg = _S[msgKey] || el.getAttribute('data-i18n') || msgKey;
                         el.textContent = (ok ? '\u2713 ' : '\u2717 ') + msg;
                         el.style.color = ok ? '#16a34a' : '#dc2626';
                     }
-                    setHint('ph_len',   pw.length >= 8,   'Mindestens 8 Zeichen');
-                    setHint('ph_upper', /[A-Z]/.test(pw), 'Mindestens ein Gro\u00dfbuchstabe');
-                    setHint('ph_num',   /[0-9]/.test(pw), 'Mindestens eine Zahl');
+                    setHint('ph_len',   pw.length >= 8,   'hintMinLen');
+                    setHint('ph_upper', /[A-Z]/.test(pw), 'hintUppercase');
+                    setHint('ph_num',   /[0-9]/.test(pw), 'hintNumber');
                     checkMatch();
                 }
                 function checkMatch() {
@@ -2566,10 +2572,10 @@ app.get('/admin/setup', (req, res) => {
                     var pw  = document.getElementById('setup_pw').value;
                     var pw2 = document.getElementById('setup_pw2').value;
                     var err = document.getElementById('form_err');
-                    if (pw.length < 8)        { err.textContent = '\u2717 Das Passwort muss mindestens 8 Zeichen lang sein.'; err.style.display = ''; return false; }
-                    if (!/[A-Z]/.test(pw))    { err.textContent = '\u2717 Das Passwort muss mindestens einen Gro\u00dfbuchstaben enthalten.'; err.style.display = ''; return false; }
-                    if (!/[0-9]/.test(pw))    { err.textContent = '\u2717 Das Passwort muss mindestens eine Zahl enthalten.'; err.style.display = ''; return false; }
-                    if (pw !== pw2)           { err.textContent = '\u2717 Die Passw\u00f6rter stimmen nicht \u00fcberein.'; err.style.display = ''; return false; }
+                    if (pw.length < 8)     { err.textContent = '\u2717 ' + (_E.passwordTooShort || ''); err.style.display = ''; return false; }
+                    if (!/[A-Z]/.test(pw)) { err.textContent = '\u2717 ' + (_E.passwordNeedsUppercase || ''); err.style.display = ''; return false; }
+                    if (!/[0-9]/.test(pw)) { err.textContent = '\u2717 ' + (_E.passwordNeedsNumber || ''); err.style.display = ''; return false; }
+                    if (pw !== pw2)        { err.textContent = '\u2717 ' + (_E.passwordMismatch || ''); err.style.display = ''; return false; }
                     err.style.display = 'none';
                     return true;
                 }
@@ -2644,7 +2650,7 @@ app.post('/admin/setup', setupLimiter, requireCsrf, async (req, res) => {
 
         return res.send(`
             <!DOCTYPE html>
-            <html lang="de">
+            <html lang="${escapeHtml(appConfig.language || 'de')}">
             <head>
                 <meta charset="UTF-8">
                 <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -2818,7 +2824,7 @@ app.get('/admin/login', (req, res) => {
     const loginErrorField = String(req.query.field || '');
     res.send(`
         <!DOCTYPE html>
-        <html lang="de">
+        <html lang="${escapeHtml(appConfig.language || 'de')}">
         <head>
             <meta charset="UTF-8">
             <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -3557,7 +3563,7 @@ app.get('/admin/system', requireAdmin, requirePermission('system.settings'), (re
                             <input type="radio" name="seatClearInterval" value="${opt.value}"
                                 ${(appConfig.seatClearInterval || 'never') === opt.value ? 'checked' : ''}
                                 style="width:16px;height:16px;accent-color:var(--primary);">
-                            ${escapeHtml(opt.label)}
+                            ${escapeHtml(L.seatClearOptions?.[opt.value] || opt.value)}
                         </label>
                     `).join('')}
                 </div>
@@ -5375,7 +5381,7 @@ app.get('/:room', (req, res) => {
     const logoExists = fs.existsSync(LOGO_FILE);
     res.send(`
         <!DOCTYPE html>
-        <html lang="de">
+        <html lang="${escapeHtml(appConfig.language || 'de')}">
         <head>
             <meta charset="UTF-8">
             <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -5601,19 +5607,13 @@ QR / SIT
 ==================================================
 */
 app.get('/:room/sit/:seat', (req, res) => {
+    const L = loadLocale();
     const roomId = req.params.room;
     const seat = Number.parseInt(req.params.seat, 10);
     const room = getRoom(roomId);
 
-    if (!room) {
-        const L = loadLocale();
-        return res.status(404).send(L.errors?.roomNotFound);
-    }
-
-    if (!Number.isInteger(seat) || seat < 1 || seat > room.seats.length) {
-        const L = loadLocale();
-        return res.status(400).send(L.errors?.invalidSeat);
-    }
+    if (!room) return res.status(404).send(L.errors?.roomNotFound);
+    if (!Number.isInteger(seat) || seat < 1 || seat > room.seats.length) return res.status(400).send(L.errors?.invalidSeat);
 
     req.session.pendingRoom = roomId;
     req.session.pendingSeat = seat;
@@ -5621,18 +5621,17 @@ app.get('/:room/sit/:seat', (req, res) => {
     req.session.save((err) => {
         if (err) {
             console.error('Session save error:', err);
-            const L = loadLocale();
             return res.status(500).send(L.errors?.sessionSaveFailed);
         }
 
         const logoExists = fs.existsSync(LOGO_FILE);
         res.send(`
 <!DOCTYPE html>
-<html lang="de">
+<html lang="${escapeHtml(appConfig.language || 'de')}">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>${escapeHtml(room.abteilung)} – Platz ${seat}</title>
+<title>${escapeHtml(room.abteilung)} – ${L.rooms?.seat || 'Seat'} ${seat}</title>
 <style>
 * { box-sizing: border-box; margin: 0; padding: 0; }
 :root {
@@ -5806,7 +5805,7 @@ footer a:hover { text-decoration: underline; }
         }
     </div>
     <div class="header-right">
-        <button class="btn-theme" onclick="toggleTheme()">&#9790; Modus</button>
+        <button class="btn-theme" onclick="toggleTheme()">${escapeHtml(L.sidebar?.themeToggle || '☽ Mode')}</button>
         <a href="/admin" class="btn-admin">&#9632; Admin</a>
     </div>
 </header>
@@ -5814,10 +5813,10 @@ footer a:hover { text-decoration: underline; }
 <div class="content">
     <div class="card">
         ${logoExists ? `<div class="card-logo"><img src="/logo.png" alt="Logo"></div>` : ''}
-        <a href="/${encodeURIComponent(roomId)}" class="back-link">&#8592; Zurück zur Raumauswahl</a>
+        <a href="/${encodeURIComponent(roomId)}" class="back-link">&#8592; ${escapeHtml(L.booking?.backToRoom || 'Back to room overview')}</a>
         <div class="room-name">${escapeHtml(room.abteilung)}</div>
-        <div class="room-info">Raum ${escapeHtml(room.roomnumber)}</div>
-        <div class="seat-badge">Platz ${seat}</div>
+        <div class="room-info">${escapeHtml(L.rooms?.roomNumber || 'Room')} ${escapeHtml(room.roomnumber)}</div>
+        <div class="seat-badge">${escapeHtml(L.rooms?.seat || 'Seat')} ${seat}</div>
 
         ${isMicrosoftLoginEnabled() ? `
         <a class="ms-btn" href="/auth/login">
@@ -5827,20 +5826,20 @@ footer a:hover { text-decoration: underline; }
                 <rect x="1" y="11" width="9" height="9" fill="#00A4EF"/>
                 <rect x="11" y="11" width="9" height="9" fill="#FFB900"/>
             </svg>
-            Mit Microsoft anmelden
+            ${escapeHtml(L.login?.microsoftLogin || 'Sign in with Microsoft')}
         </a>
-        <div class="hint-text">Nach dem Login wird der Platz automatisch eingetragen.</div>
+        <div class="hint-text">${escapeHtml(L.booking?.autoCheckinHint || '')}</div>
         ` : `
         <form method="POST" action="/${encodeURIComponent(roomId)}/sit/${seat}" style="text-align:left;">
             <input type="hidden" name="_csrf" value="${getCsrfToken(req)}">
-            <label style="display:block;font-size:13px;font-weight:600;color:var(--muted);margin-bottom:5px;">Dein Name</label>
-            <input type="text" name="name" placeholder="z. B. Max Mustermann" required
+            <label style="display:block;font-size:13px;font-weight:600;color:var(--muted);margin-bottom:5px;">${escapeHtml(L.booking?.yourName || 'Your Name')}</label>
+            <input type="text" name="name" placeholder="${escapeHtml(L.admins?.displayNamePlaceholder || 'e.g. John Doe')}" required
                 style="width:100%;padding:11px 13px;margin-bottom:12px;border:1px solid var(--border);border-radius:10px;font-size:14px;background:var(--surface);color:var(--text);">
-            <label style="display:block;font-size:13px;font-weight:600;color:var(--muted);margin-bottom:5px;">Jobtitel <span style="font-weight:400;opacity:.7;">(optional)</span></label>
-            <input type="text" name="title" placeholder="z. B. Entwickler"
+            <label style="display:block;font-size:13px;font-weight:600;color:var(--muted);margin-bottom:5px;">${escapeHtml(L.booking?.jobTitle || 'Job Title')} <span style="font-weight:400;opacity:.7;">${escapeHtml(L.booking?.optional || '(optional)')}</span></label>
+            <input type="text" name="title" placeholder="${escapeHtml(L.booking?.jobTitlePlaceholder || 'e.g. Developer')}"
                 style="width:100%;padding:11px 13px;margin-bottom:20px;border:1px solid var(--border);border-radius:10px;font-size:14px;background:var(--surface);color:var(--text);">
             <button type="submit" class="ms-btn" style="border:none;cursor:pointer;width:100%;">
-                Platz belegen
+                ${escapeHtml(L.booking?.claimSeat || 'Claim Seat')}
             </button>
         </form>
         `}
@@ -5892,18 +5891,18 @@ app.post('/:room/sit/:seat', requireCsrf, (req, res) => {
     if (name.length > 128) return res.status(400).send(L.errors?.nameTooLong);
     if (title.length > 128) return res.status(400).send(L.errors?.jobTitleTooLong);
 
-    room.seats[seat - 1] = { name, title: title || 'Mitarbeiter', since: Date.now() };
+    room.seats[seat - 1] = { name, title: title || L.booking?.defaultJobTitle || 'Employee', since: Date.now() };
     saveRooms();
     pushToTrmnl(room);
 
     const logoExists = fs.existsSync(LOGO_FILE);
     return res.send(`
         <!DOCTYPE html>
-        <html lang="de">
+        <html lang="${escapeHtml(appConfig.language || 'de')}">
         <head>
             <meta charset="UTF-8">
             <meta name="viewport" content="width=device-width, initial-scale=1.0">
-            <title>Eingecheckt</title>
+            <title>${escapeHtml(L.booking?.checkedIn || 'Checked In')}</title>
             <style>
                 * { box-sizing: border-box; margin: 0; padding: 0; }
                 :root { --bg:#f0f4f8; --surface:#fff; --text:#1e293b; --muted:#64748b; --border:#e2e8f0; --primary:#2563eb; }
@@ -5922,9 +5921,9 @@ app.post('/:room/sit/:seat', requireCsrf, (req, res) => {
             <div class="card">
                 ${logoExists ? `<div style="margin-bottom:20px;"><img src="/logo.png" alt="Logo" style="max-height:60px;max-width:200px;object-fit:contain;"></div>` : ''}
                 <div class="icon">&#10003;</div>
-                <h2>Eingecheckt!</h2>
-                <p class="sub"><strong>${escapeHtml(name)}</strong> sitzt jetzt auf Platz ${seat}.</p>
-                <a href="/${encodeURIComponent(roomId)}" class="back">&#8592; Zurück zur Raumübersicht</a>
+                <h2>${escapeHtml(L.booking?.checkedIn || 'Checked In!')}</h2>
+                <p class="sub"><strong>${escapeHtml(name)}</strong> ${escapeHtml(L.booking?.nowSitsAt || 'is now sitting at')} ${escapeHtml(L.rooms?.seat || 'Seat')} ${seat}.</p>
+                <a href="/${encodeURIComponent(roomId)}" class="back">&#8592; ${escapeHtml(L.booking?.backToRoom || 'Back to room overview')}</a>
                 ${renderSupportFooter()}
             </div>
         </body>
@@ -5970,8 +5969,10 @@ app.get('/auth/login', (req, res) => {
 });
 
 app.get('/auth/callback', async (req, res) => {
+    const L = loadLocale();
+
     if (!hasMicrosoftConfig()) {
-        return res.redirect('/auth/error?msg=' + encodeURIComponent('Microsoft / Entra ist nicht konfiguriert.'));
+        return res.redirect('/auth/error?msg=' + encodeURIComponent(L.errors?.microsoftNotConfiguredLong));
     }
 
     if (!msalClient) {
@@ -5979,14 +5980,13 @@ app.get('/auth/callback', async (req, res) => {
     }
 
     if (!msalClient) {
-        const L = loadLocale();
         return res.redirect('/auth/error?msg=' + encodeURIComponent(L.errors?.msalInitFailed));
     }
 
     const code = req.query.code;
 
     if (!code) {
-        return res.redirect('/auth/error?msg=' + encodeURIComponent('Kein Autorisierungscode von Microsoft erhalten.'));
+        return res.redirect('/auth/error?msg=' + encodeURIComponent(L.errors?.noAuthCode));
     }
 
     try {
@@ -5995,11 +5995,11 @@ app.get('/auth/callback', async (req, res) => {
 
         const pendingRoomObj = getRoom(pendingRoom);
         if (!pendingRoom || !pendingRoomObj) {
-            return res.redirect('/auth/error?msg=' + encodeURIComponent('Kein gültiger Raum in der Session gefunden.'));
+            return res.redirect('/auth/error?msg=' + encodeURIComponent(L.errors?.noPendingRoom));
         }
 
         if (!Number.isInteger(pendingSeat) || pendingSeat < 1 || pendingSeat > pendingRoomObj.seats.length) {
-            return res.redirect('/auth/error?msg=' + encodeURIComponent('Kein gültiger Platz in der Session gefunden.'));
+            return res.redirect('/auth/error?msg=' + encodeURIComponent(L.errors?.noPendingSeat));
         }
 
         const tokenRequest = {
@@ -6011,7 +6011,7 @@ app.get('/auth/callback', async (req, res) => {
         const tokenResponse = await msalClient.acquireTokenByCode(tokenRequest);
 
         if (!tokenResponse || !tokenResponse.accessToken) {
-            return res.redirect('/auth/error?msg=' + encodeURIComponent('Kein Access Token von Microsoft erhalten.'));
+            return res.redirect('/auth/error?msg=' + encodeURIComponent(L.errors?.noAccessToken));
         }
 
         const graphUser = await fetchMicrosoftUser(tokenResponse.accessToken);
@@ -6019,15 +6019,15 @@ app.get('/auth/callback', async (req, res) => {
         const room = getRoom(pendingRoom);
 
         if (!room) {
-            return res.redirect('/auth/error?msg=' + encodeURIComponent('Raum nicht mehr vorhanden.'));
+            return res.redirect('/auth/error?msg=' + encodeURIComponent(L.errors?.roomGone));
         }
 
         const fullName =
             graphUser.displayName ||
             `${graphUser.givenName || ''} ${graphUser.surname || ''}`.trim() ||
-            'Unbekannt';
+            L.common?.unknown || 'Unknown';
 
-        const jobTitle = graphUser.jobTitle || 'Mitarbeiter';
+        const jobTitle = graphUser.jobTitle || L.booking?.defaultJobTitle || 'Employee';
 
         room.seats[pendingSeat - 1] = {
             name: fullName,
@@ -6044,11 +6044,11 @@ app.get('/auth/callback', async (req, res) => {
         const logoExists = fs.existsSync(LOGO_FILE);
         return res.send(`
             <!DOCTYPE html>
-            <html lang="de">
+            <html lang="${escapeHtml(appConfig.language || 'de')}">
             <head>
                 <meta charset="UTF-8">
                 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-                <title>Eingecheckt</title>
+                <title>${escapeHtml(L.booking?.checkedIn || 'Checked In')}</title>
                 <style>
                     * { box-sizing: border-box; margin: 0; padding: 0; }
                     :root { --bg:#f0f4f8; --surface:#fff; --text:#1e293b; --muted:#64748b; --border:#e2e8f0; --primary:#2563eb; }
@@ -6067,9 +6067,9 @@ app.get('/auth/callback', async (req, res) => {
                 <div class="card">
                     ${logoExists ? `<div style="margin-bottom:20px;"><img src="/logo.png" alt="Logo" style="max-height:60px;max-width:200px;object-fit:contain;"></div>` : ''}
                     <div class="icon">&#10003;</div>
-                    <h2>Eingecheckt!</h2>
-                    <p class="sub"><strong>${escapeHtml(fullName)}</strong> sitzt jetzt auf Platz ${pendingSeat}.</p>
-                    <a href="/${encodeURIComponent(pendingRoom)}" class="back">&#8592; Zurück zur Raumübersicht</a>
+                    <h2>${escapeHtml(L.booking?.checkedIn || 'Checked In!')}</h2>
+                    <p class="sub"><strong>${escapeHtml(fullName)}</strong> ${escapeHtml(L.booking?.nowSitsAt || 'is now sitting at')} ${escapeHtml(L.rooms?.seat || 'Seat')} ${pendingSeat}.</p>
+                    <a href="/${encodeURIComponent(pendingRoom)}" class="back">&#8592; ${escapeHtml(L.booking?.backToRoom || 'Back to room overview')}</a>
                     ${renderSupportFooter()}
                 </div>
             </body>
@@ -6077,7 +6077,7 @@ app.get('/auth/callback', async (req, res) => {
         `);
     } catch (err) {
         console.error('Fehler im Auth-Callback:', err);
-        return res.redirect('/auth/error?msg=' + encodeURIComponent('Benutzer konnte nicht gespeichert werden.'));
+        return res.redirect('/auth/error?msg=' + encodeURIComponent(L.errors?.saveUserFailed));
     }
 });
 
@@ -6181,6 +6181,7 @@ setInterval(() => {
 }, 30000);
 
 app.get('/admin/ssh', requireAdmin, requirePermission('server.ssh'), (req, res) => {
+    const L = loadLocale();
     const content = `
         <div class="topbar">
             <h1 class="page-title" data-i18n="ssh.title">SSH-Konsole</h1>
@@ -6206,26 +6207,27 @@ app.get('/admin/ssh', requireAdmin, requirePermission('server.ssh'), (req, res) 
         var sshState    = 'user';   // 'user' | 'pass' | 'connected'
         var sshUsername = '';
         var sshInput    = '';
+        var _SSH = (window._LOCALE && window._LOCALE.ssh) ? window._LOCALE.ssh : {};
 
         function sshWrite(text) { sshTerm.write(text); }
 
         function sshPromptUser() {
             sshState = 'user';
             sshInput = '';
-            sshWrite('\\r\\nBenutzername: ');
+            sshWrite('\\r\\n' + (_SSH.username || 'Username') + ': ');
         }
 
         function sshPromptPass() {
             sshState = 'pass';
             sshInput = '';
-            sshWrite('Passwort: ');
+            sshWrite((_SSH.password || 'Password') + ': ');
         }
 
         function sshConnect(username, password) {
-            sshWrite('\\r\\nVerbindung wird hergestellt\\u2026\\r\\n');
+            sshWrite('\\r\\n' + (_SSH.connecting || 'Connecting...') + '\\r\\n');
             var connectTimer = setTimeout(function() {
-                sshWrite('\\r\\nTimeout: Keine Antwort vom SSH-Server.\\r\\n');
-                sshWrite('Prüfe ob SSH läuft: sudo systemctl status ssh\\r\\n');
+                sshWrite('\\r\\n' + (_SSH.timeout || 'Timeout: No response from SSH server.') + '\\r\\n');
+                sshWrite((_SSH.checkSsh || 'Check if SSH is running: sudo systemctl status ssh') + '\\r\\n');
                 if (sshWs) { sshWs.close(); sshWs = null; }
                 sshPromptUser();
             }, 15000);
@@ -6237,7 +6239,7 @@ app.get('/admin/ssh', requireAdmin, requirePermission('server.ssh'), (req, res) 
             })
             .then(function(r) { return r.json(); })
             .then(function(d) {
-                if (!d.token) { clearTimeout(connectTimer); sshWrite('\\r\\nFehler: Kein Token erhalten.\\r\\n'); sshPromptUser(); return; }
+                if (!d.token) { clearTimeout(connectTimer); sshWrite('\\r\\n' + (_SSH.noToken || 'Error: No token received.') + '\\r\\n'); sshPromptUser(); return; }
                 var proto = location.protocol === 'https:' ? 'wss' : 'ws';
                 sshWs = new WebSocket(proto + '://' + location.host + '/admin/ssh/ws?token=' + encodeURIComponent(d.token));
                 sshWs.onopen = function() {
@@ -6255,30 +6257,30 @@ app.get('/admin/ssh', requireAdmin, requirePermission('server.ssh'), (req, res) 
                         sshTerm.write(msg.data);
                     } else if (msg.type === 'error') {
                         clearTimeout(connectTimer);
-                        sshWrite('\\r\\nFehler: ' + msg.message + '\\r\\n');
+                        sshWrite('\\r\\n' + (_SSH.errorPrefix || 'Error: ') + msg.message + '\\r\\n');
                         sshState = 'user';
                         document.getElementById('ssh-disconnect-btn').style.display = 'none';
                         sshPromptUser();
                     } else if (msg.type === 'close') {
-                        sshWrite('\\r\\nVerbindung getrennt.\\r\\n');
+                        sshWrite('\\r\\n' + (_SSH.disconnected || 'Disconnected.') + '\\r\\n');
                         sshState = 'user';
                         document.getElementById('ssh-disconnect-btn').style.display = 'none';
                         sshPromptUser();
                     }
                 };
-                sshWs.onerror = function() { sshWrite('\\r\\nWebSocket-Fehler.\\r\\n'); sshPromptUser(); };
+                sshWs.onerror = function() { sshWrite('\\r\\n' + (_SSH.wsError || 'WebSocket error.') + '\\r\\n'); sshPromptUser(); };
                 sshWs.onclose = function() {
-                    if (sshState === 'connected') { sshWrite('\\r\\nVerbindung geschlossen.\\r\\n'); sshPromptUser(); }
+                    if (sshState === 'connected') { sshWrite('\\r\\n' + (_SSH.closed || 'Connection closed.') + '\\r\\n'); sshPromptUser(); }
                     sshState = 'user';
                     document.getElementById('ssh-disconnect-btn').style.display = 'none';
                 };
             })
-            .catch(function() { sshWrite('\\r\\nVerbindungsfehler.\\r\\n'); sshPromptUser(); });
+            .catch(function() { sshWrite('\\r\\n' + (_SSH.connError || 'Connection error.') + '\\r\\n'); sshPromptUser(); });
         }
 
         function sshDisconnect() {
             if (sshWs) { sshWs.close(); sshWs = null; }
-            sshWrite('\\r\\nGetrennt.\\r\\n');
+            sshWrite('\\r\\n' + (_SSH.separated || 'Disconnected.') + '\\r\\n');
             sshState = 'user';
             document.getElementById('ssh-disconnect-btn').style.display = 'none';
             sshPromptUser();
@@ -6323,13 +6325,13 @@ app.get('/admin/ssh', requireAdmin, requirePermission('server.ssh'), (req, res) 
                 }
             });
 
-            sshWrite('SSH-Konsole \\u2014 localhost\\r\\n');
+            sshWrite((_SSH.consoleHeader || 'SSH Console \u2014 localhost') + '\\r\\n');
             sshWrite('\\u2500'.repeat(30) + '\\r\\n');
             sshPromptUser();
         });
         </script>
     `;
-    res.send(renderAdminLayout(req, 'SSH-Konsole', content));
+    res.send(renderAdminLayout(req, L.ssh?.title || 'SSH', content));
 });
 
 app.post('/admin/ssh/token', sshTokenLimiter, requireAdmin, requirePermission('server.ssh'), requireCsrf, (req, res) => {
