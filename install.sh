@@ -105,8 +105,8 @@ if [ "$HTTPS_ENABLED" = true ]; then
     echo "==> Alte Zertifikatskonfiguration bereinigen..."
     sudo certbot delete --cert-name "$DOMAIN" --non-interactive 2>/dev/null || true
 
-    echo "==> SSL-Zertifikat wird beantragt (via Apache)..."
-    sudo certbot certonly --apache \
+    echo "==> SSL-Zertifikat wird beantragt (via Webroot)..."
+    sudo certbot certonly --webroot -w /var/www/html \
         -d "$DOMAIN" \
         --email "$LE_EMAIL" \
         --agree-tos \
