@@ -3545,7 +3545,7 @@ app.post('/admin/save-sleep-schedule', requireAdmin, requirePermission('rooms.ed
         }
 
         const list = await listRes.json();
-        const devices = list.devices || list;
+        const devices = list.data || list.devices || list;
         const device = Array.isArray(devices)
             ? devices.find(d => (d.mac_address || '').toUpperCase() === room.trmnlDeviceMac.toUpperCase())
             : null;
