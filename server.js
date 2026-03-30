@@ -3296,7 +3296,7 @@ app.get('/admin/rooms', requireAdmin, requirePermission('rooms.view'), (req, res
                                 <p style="font-size:13px;opacity:.7;margin-bottom:8px;">Bei jeder Änderung werden die Daten sofort an TRMNL gesendet.</p>
 
                                 <label>Webhook URL <span style="font-weight:400;opacity:.6;">(aus TRMNL Plugin → Webhook-Strategie)</span></label>
-                                <input type="text" name="trmnlWebhookUrl" value="${escapeHtml(room.trmnlWebhookUrl || '')}" placeholder="https://trmnl.com/api/custom_plugins/...">
+                                <input type="text" name="trmnlWebhookUrl" value="${escapeHtml(room.trmnlWebhookUrl || '')}" placeholder="https://usetrmnl.com/api/custom_plugins/...">
                             </div>
 
                             <hr style="margin:20px 0;border:none;border-top:1px solid var(--border);">
@@ -3305,6 +3305,9 @@ app.get('/admin/rooms', requireAdmin, requirePermission('rooms.view'), (req, res
 
                             <label>TRMNL Account API Key <span style="font-weight:400;opacity:.6;">(Account → Settings → API Key)</span></label>
                             <input type="text" name="trmnlDeviceApiKey" value="${escapeHtml(room.trmnlDeviceApiKey || '')}" placeholder="Account API Key aus TRMNL Settings">
+
+                            <label>TRMNL Device API Key <span style="font-weight:400;opacity:.6;">(Gerät → Settings → API Key)</span></label>
+                            <input type="text" name="trmnlDeviceAccessToken" value="${escapeHtml(room.trmnlDeviceAccessToken || '')}" placeholder="Device Access Token aus TRMNL">
 
                             <label>Device MAC-Adresse</label>
                             <input type="text" name="trmnlDeviceMac" value="${escapeHtml(room.trmnlDeviceMac || '')}" placeholder="z. B. 08:92:72:65:F8:9C">
@@ -3497,6 +3500,7 @@ app.post('/admin/update-room', requireAdmin, requirePermission('rooms.edit'), re
         room.trmnlMode = ['none','polling','webhook'].includes(req.body.trmnlMode) ? req.body.trmnlMode : 'none';
         room.trmnlWebhookUrl = String(req.body.trmnlWebhookUrl || '').trim();
         room.trmnlDeviceApiKey = String(req.body.trmnlDeviceApiKey || '').trim();
+        room.trmnlDeviceAccessToken = String(req.body.trmnlDeviceAccessToken || '').trim();
         room.trmnlDeviceMac = String(req.body.trmnlDeviceMac || '').trim();
         room.trmnlSleepStart = String(req.body.trmnlSleepStart || '').trim();
         room.trmnlSleepEnd = String(req.body.trmnlSleepEnd || '').trim();
@@ -3546,7 +3550,11 @@ app.post('/admin/save-sleep-schedule', requireAdmin, requirePermission('rooms.ed
     if (!room.trmnlDeviceApiKey || !room.trmnlDeviceMac) return res.status(400).json({ error: 'Device API Key und MAC-Adresse fehlen' });
 
     try {
-        const headers = { 'Authorization': `Bearer ${room.trmnlDeviceApiKey}`, 'Content-Type': 'application/json' };
+        // Account Key für Geräteliste, Device Access Token als Fallback
+        const authHeader = room.trmnlDeviceAccessToken
+            ? { 'access-token': room.trmnlDeviceAccessToken }
+            : { 'Authorization': `Bearer ${room.trmnlDeviceApiKey}` };
+        const headers = { ...authHeader, 'Content-Type': 'application/json' };
 
         // Gerät per MAC finden
         const listRes = await fetch('https://usetrmnl.com/api/devices', { headers });
