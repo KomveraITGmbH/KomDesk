@@ -1,6 +1,9 @@
+const http    = require('http');
 const express = require('express');
 const cors = require('cors');
 const session = require('express-session');
+const { WebSocketServer } = require('ws');
+const { Client: SshClient } = require('ssh2');
 let FileStore;
 try { FileStore = require('session-file-store')(session); } catch(e) { console.warn('[Session] session-file-store nicht installiert, nutze MemoryStore. Führe npm install aus.'); }
 const { ConfidentialClientApplication } = require('@azure/msal-node');
@@ -254,6 +257,11 @@ const PERMISSION_GROUPS = [
                 key: 'server.reboot',
                 label: 'Linux neu starten',
                 description: 'Darf den gesamten Linux-Server (sudo reboot) neu starten.'
+            },
+            {
+                key: 'server.ssh',
+                label: 'SSH-Konsole',
+                description: 'Darf die SSH-Konsole im Admin-Bereich verwenden.'
             }
         ]
     },
@@ -840,6 +848,7 @@ function renderSidebar(req) {
         hasPermission(req, 'microsoft.view') ? `<a href="/admin/microsoft">&#9632; Microsoft</a>` : '',
         hasPermission(req, 'system.settings') ? `<a href="/admin/system">&#9632; System</a>` : '',
         hasPermission(req, 'system.logo') ? `<a href="/admin/logo">&#9632; Logo</a>` : '',
+        hasPermission(req, 'server.ssh')  ? `<a href="/admin/ssh">&#9632; SSH</a>` : '',
         `<a href="/admin/account">&#9632; Mein Konto</a>`,
         `<a href="/admin/logout" style="color:#f87171;">&#9632; Logout</a>`
     ].filter(Boolean).join('');
@@ -5995,6 +6004,143 @@ app.use((err, req, res, next) => {
 
 /*
 ==================================================
+SSH KONSOLE
+==================================================
+*/
+const sshTokens = new Map();
+setInterval(() => {
+    const now = Date.now();
+    for (const [k, v] of sshTokens) {
+        if (v.expires < now) sshTokens.delete(k);
+    }
+}, 30000);
+
+app.get('/admin/ssh', requireAdmin, requirePermission('server.ssh'), (req, res) => {
+    const content = `
+        <div class="topbar"><h1 class="page-title">SSH-Konsole</h1></div>
+        <div class="card">
+            <div style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:16px;">
+                <div style="flex:1;min-width:160px;">
+                    <label>Host</label>
+                    <input id="ssh-host" type="text" value="127.0.0.1" style="width:100%;">
+                </div>
+                <div style="min-width:80px;">
+                    <label>Port</label>
+                    <input id="ssh-port" type="number" value="22" style="width:100%;">
+                </div>
+                <div style="flex:1;min-width:160px;">
+                    <label>Benutzer</label>
+                    <input id="ssh-user" type="text" autocomplete="off" style="width:100%;">
+                </div>
+                <div style="flex:1;min-width:160px;">
+                    <label>Passwort</label>
+                    <input id="ssh-pass" type="password" autocomplete="off" style="width:100%;">
+                </div>
+            </div>
+            <div style="display:flex;gap:8px;margin-bottom:16px;">
+                <button id="ssh-connect-btn" onclick="sshConnect()">Verbinden</button>
+                <button id="ssh-disconnect-btn" onclick="sshDisconnect()" class="btn-danger" style="display:none;">Trennen</button>
+            </div>
+            <div id="ssh-status" style="font-size:13px;opacity:.6;margin-bottom:8px;"></div>
+            <div id="ssh-terminal-wrap" style="display:none;background:#0f0f0f;border-radius:10px;padding:8px;overflow:hidden;">
+                <div id="ssh-terminal"></div>
+            </div>
+        </div>
+
+        <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/xterm@5.3.0/css/xterm.min.css">
+        <script src="https://cdn.jsdelivr.net/npm/xterm@5.3.0/lib/xterm.min.js"></script>
+        <script src="https://cdn.jsdelivr.net/npm/xterm-addon-fit@0.8.0/lib/xterm-addon-fit.min.js"></script>
+        <script>
+        var sshWs = null;
+        var sshTerm = null;
+        var fitAddon = null;
+
+        function sshSetStatus(msg) {
+            document.getElementById('ssh-status').textContent = msg;
+        }
+
+        function sshConnect() {
+            var host = document.getElementById('ssh-host').value.trim();
+            var port = parseInt(document.getElementById('ssh-port').value) || 22;
+            var user = document.getElementById('ssh-user').value.trim();
+            var pass = document.getElementById('ssh-pass').value;
+            if (!host || !user || !pass) { sshSetStatus('Bitte alle Felder ausfüllen.'); return; }
+
+            sshSetStatus('Verbindung wird hergestellt\u2026');
+            document.getElementById('ssh-connect-btn').disabled = true;
+
+            fetch('/admin/ssh/token', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                body: '_csrf=' + encodeURIComponent(getCsrf())
+            })
+            .then(function(r) { return r.json(); })
+            .then(function(d) {
+                if (!d.token) { sshSetStatus('Token-Fehler.'); document.getElementById('ssh-connect-btn').disabled = false; return; }
+
+                var proto = location.protocol === 'https:' ? 'wss' : 'ws';
+                sshWs = new WebSocket(proto + '://' + location.host + '/admin/ssh/ws?token=' + encodeURIComponent(d.token));
+                sshWs.onopen = function() {
+                    sshWs.send(JSON.stringify({ host: host, port: port, username: user, password: pass }));
+                };
+                sshWs.onmessage = function(e) {
+                    var msg = JSON.parse(e.data);
+                    if (msg.type === 'ready') {
+                        sshSetStatus('Verbunden mit ' + host);
+                        document.getElementById('ssh-disconnect-btn').style.display = '';
+                        document.getElementById('ssh-connect-btn').style.display = 'none';
+                        document.getElementById('ssh-terminal-wrap').style.display = '';
+                        if (!sshTerm) {
+                            sshTerm = new Terminal({ cursorBlink: true, fontSize: 13, theme: { background: '#0f0f0f' } });
+                            fitAddon = new FitAddon.FitAddon();
+                            sshTerm.loadAddon(fitAddon);
+                            sshTerm.open(document.getElementById('ssh-terminal'));
+                            fitAddon.fit();
+                            sshTerm.onData(function(data) {
+                                if (sshWs && sshWs.readyState === 1) sshWs.send(JSON.stringify({ type: 'data', data: data }));
+                            });
+                            window.addEventListener('resize', function() { if (fitAddon) fitAddon.fit(); });
+                        }
+                    } else if (msg.type === 'data') {
+                        if (sshTerm) sshTerm.write(msg.data);
+                    } else if (msg.type === 'error') {
+                        sshSetStatus('Fehler: ' + msg.message);
+                        sshCleanup();
+                    } else if (msg.type === 'close') {
+                        sshSetStatus('Verbindung getrennt.');
+                        sshCleanup();
+                    }
+                };
+                sshWs.onerror = function() { sshSetStatus('WebSocket-Fehler.'); sshCleanup(); };
+                sshWs.onclose = function() { sshSetStatus('Verbindung geschlossen.'); sshCleanup(); };
+            })
+            .catch(function() { sshSetStatus('Verbindungsfehler.'); document.getElementById('ssh-connect-btn').disabled = false; });
+        }
+
+        function sshDisconnect() {
+            if (sshWs) sshWs.close();
+            sshSetStatus('Getrennt.');
+            sshCleanup();
+        }
+
+        function sshCleanup() {
+            document.getElementById('ssh-connect-btn').disabled = false;
+            document.getElementById('ssh-connect-btn').style.display = '';
+            document.getElementById('ssh-disconnect-btn').style.display = 'none';
+        }
+        </script>
+    `;
+    res.send(renderAdminLayout(req, 'SSH-Konsole', content));
+});
+
+app.post('/admin/ssh/token', requireAdmin, requirePermission('server.ssh'), requireCsrf, (req, res) => {
+    const token = crypto.randomBytes(32).toString('hex');
+    sshTokens.set(token, { adminUsername: req.session.adminUsername, expires: Date.now() + 30000 });
+    res.json({ token });
+});
+
+/*
+==================================================
 START
 ==================================================
 */
@@ -6006,7 +6152,91 @@ START
 
         setInterval(runSeatAutoClear, 60 * 1000);
 
-        app.listen(PORT, '0.0.0.0', () => {
+        const httpServer = http.createServer(app);
+
+        const wss = new WebSocketServer({ noServer: true });
+
+        httpServer.on('upgrade', (req, socket, head) => {
+            if (req.url && req.url.startsWith('/admin/ssh/ws')) {
+                const urlParams = new URL(req.url, 'http://localhost');
+                const token = urlParams.searchParams.get('token');
+                const entry = token ? sshTokens.get(token) : null;
+                if (!entry || entry.expires < Date.now()) {
+                    socket.write('HTTP/1.1 401 Unauthorized\r\n\r\n');
+                    socket.destroy();
+                    return;
+                }
+                sshTokens.delete(token);
+                wss.handleUpgrade(req, socket, head, (ws) => {
+                    ws._adminUsername = entry.adminUsername;
+                    wss.emit('connection', ws, req);
+                });
+            } else {
+                socket.destroy();
+            }
+        });
+
+        wss.on('connection', (ws) => {
+            let ssh = null;
+            let stream = null;
+            let ready = false;
+
+            ws.on('message', (raw) => {
+                let msg;
+                try { msg = JSON.parse(raw); } catch { return; }
+
+                if (!ready && msg.host) {
+                    ssh = new SshClient();
+                    ssh.on('ready', () => {
+                        ssh.shell({ term: 'xterm-256color', rows: 24, cols: 80 }, (err, s) => {
+                            if (err) {
+                                ws.send(JSON.stringify({ type: 'error', message: err.message }));
+                                ws.close();
+                                return;
+                            }
+                            stream = s;
+                            ready = true;
+                            ws.send(JSON.stringify({ type: 'ready' }));
+                            stream.on('data', (d) => {
+                                if (ws.readyState === ws.OPEN)
+                                    ws.send(JSON.stringify({ type: 'data', data: d.toString('utf8') }));
+                            });
+                            stream.stderr.on('data', (d) => {
+                                if (ws.readyState === ws.OPEN)
+                                    ws.send(JSON.stringify({ type: 'data', data: d.toString('utf8') }));
+                            });
+                            stream.on('close', () => {
+                                if (ws.readyState === ws.OPEN)
+                                    ws.send(JSON.stringify({ type: 'close' }));
+                                ws.close();
+                                ssh.end();
+                            });
+                        });
+                    });
+                    ssh.on('error', (err) => {
+                        if (ws.readyState === ws.OPEN)
+                            ws.send(JSON.stringify({ type: 'error', message: err.message }));
+                        ws.close();
+                    });
+                    ssh.connect({
+                        host:     String(msg.host     || '').trim(),
+                        port:     parseInt(msg.port)  || 22,
+                        username: String(msg.username || '').trim(),
+                        password: String(msg.password || ''),
+                        readyTimeout: 10000
+                    });
+                } else if (ready && msg.type === 'data' && stream) {
+                    stream.write(msg.data);
+                }
+            });
+
+            ws.on('close', () => {
+                if (stream) { try { stream.close(); } catch {} }
+                if (ssh)    { try { ssh.end();       } catch {} }
+            });
+        });
+
+        httpServer.listen(PORT, '0.0.0.0', () => {
             console.log('Server läuft auf http://0.0.0.0:' + PORT);
             console.log('Beim ersten Start werden fehlende JSON-Dateien automatisch erstellt.');
         });
