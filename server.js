@@ -57,7 +57,6 @@ const ADMINS_FILE = path.join(DATA_DIR, 'admins.json');
 const CONFIG_FILE = path.join(DATA_DIR, 'config.json');
 const KEY_FILE = path.join(DATA_DIR, 'app.key');
 const TERMINALS_FILE = path.join(DATA_DIR, 'terminals.json');
-const DASHBOARD_LAYOUTS_FILE = path.join(DATA_DIR, 'dashboard_layouts.json');
 
 /*
 ==================================================
@@ -353,7 +352,6 @@ DATEN LADEN
 */
 let rooms = ensureJsonFile(ROOMS_FILE, DEFAULT_ROOMS);
 let terminals = ensureJsonFile(TERMINALS_FILE, {});
-let dashboardLayouts = ensureJsonFile(DASHBOARD_LAYOUTS_FILE, {});
 let admins = ensureJsonFile(ADMINS_FILE, []);
 let appConfig = ensureJsonFile(CONFIG_FILE, DEFAULT_CONFIG);
 
@@ -482,10 +480,6 @@ function saveRooms() {
 
 function saveTerminals() {
     writeJsonFile(TERMINALS_FILE, terminals);
-}
-
-function saveDashboardLayouts() {
-    writeJsonFile(DASHBOARD_LAYOUTS_FILE, dashboardLayouts);
 }
 
 function getTerminal(id) {
@@ -2966,279 +2960,150 @@ ADMIN DASHBOARD
 ==================================================
 */
 app.get('/admin', requireAdmin, requirePermission('dashboard.view'), (req, res) => {
-    const currentAdmin = getCurrentAdmin(req);
-    const roomList     = Object.values(rooms);
-    const totalSeats   = roomList.reduce((s, r) => s + r.seats.length, 0);
-    const occupiedSeats= roomList.reduce((s, r) => s + r.seats.filter(seat => seat.name && seat.name !== 'Frei').length, 0);
-    const freeSeats    = totalSeats - occupiedSeats;
+    const currentAdmin  = getCurrentAdmin(req);
+    const roomList      = Object.values(rooms);
+    const totalSeats    = roomList.reduce((s, r) => s + r.seats.length, 0);
+    const occupiedSeats = roomList.reduce((s, r) => s + r.seats.filter(seat => seat.name && seat.name !== 'Frei').length, 0);
+    const freeSeats     = totalSeats - occupiedSeats;
+    const terminalList  = Object.values(terminals);
 
-    // Widget-Definitionen
-    const WIDGETS = [
-        {
-            id: 'stats', title: 'Statistiken', icon: '📊',
-            html: `<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px;text-align:center;">
-                <div style="padding:14px;border:1px solid var(--border);border-radius:8px;"><div style="font-size:28px;font-weight:700;">${roomList.length}</div><div style="opacity:.55;font-size:12px;margin-top:3px;">Räume</div></div>
-                <div style="padding:14px;border:1px solid var(--border);border-radius:8px;"><div style="font-size:28px;font-weight:700;color:#dc2626;">${occupiedSeats}</div><div style="opacity:.55;font-size:12px;margin-top:3px;">Belegt</div></div>
-                <div style="padding:14px;border:1px solid var(--border);border-radius:8px;"><div style="font-size:28px;font-weight:700;color:#059669;">${freeSeats}</div><div style="opacity:.55;font-size:12px;margin-top:3px;">Frei</div></div>
+    // --- Statistiken ---
+    const statsHtml = `
+        <div class="card">
+            <h2 style="margin:0 0 16px 0;font-size:16px;">📊 Statistiken</h2>
+            <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px;text-align:center;">
+                <div style="padding:14px;border:1px solid var(--border);border-radius:8px;">
+                    <div style="font-size:28px;font-weight:700;">${roomList.length}</div>
+                    <div style="opacity:.55;font-size:12px;margin-top:3px;">Räume</div>
+                </div>
+                <div style="padding:14px;border:1px solid var(--border);border-radius:8px;">
+                    <div style="font-size:28px;font-weight:700;color:#dc2626;">${occupiedSeats}</div>
+                    <div style="opacity:.55;font-size:12px;margin-top:3px;">Belegt</div>
+                </div>
+                <div style="padding:14px;border:1px solid var(--border);border-radius:8px;">
+                    <div style="font-size:28px;font-weight:700;color:#059669;">${freeSeats}</div>
+                    <div style="opacity:.55;font-size:12px;margin-top:3px;">Frei</div>
+                </div>
             </div>
-            <div style="margin-top:10px;background:var(--border);border-radius:999px;height:7px;overflow:hidden;"><div style="height:100%;width:${totalSeats?Math.round(occupiedSeats/totalSeats*100):0}%;background:#dc2626;border-radius:999px;"></div></div>
-            <div style="text-align:center;font-size:11px;opacity:.45;margin-top:4px;">${totalSeats?Math.round(occupiedSeats/totalSeats*100):0}% Auslastung</div>`
-        },
-        {
-            id: 'room_occupancy', title: 'Raumauslastung', icon: '🏢',
-            html: roomList.length === 0 ? '<p style="opacity:.5;font-size:13px;">Keine Räume.</p>' :
-                roomList.map(r => { const tot=r.seats.length,occ=r.seats.filter(s=>s.name&&s.name!=='Frei').length,pct=tot?Math.round(occ/tot*100):0,c=pct===100?'#dc2626':pct>50?'#f59e0b':'#059669'; return `<div style="margin-bottom:10px;"><div style="display:flex;justify-content:space-between;font-size:13px;margin-bottom:3px;"><span><strong>${escapeHtml(r.abteilung)}</strong> <span style="opacity:.5;">${escapeHtml(r.roomnumber)}</span></span><span style="color:${c};">${occ}/${tot}</span></div><div style="background:var(--border);border-radius:999px;height:5px;overflow:hidden;"><div style="height:100%;width:${pct}%;background:${c};border-radius:999px;"></div></div></div>`; }).join('')
-        },
-        {
-            id: 'occupied_seats', title: 'Belegte Plätze', icon: '📋',
-            html: (() => { const occ=[]; roomList.forEach(r=>r.seats.forEach(s=>{if(s.name&&s.name!=='Frei')occ.push({room:r.abteilung,nr:r.roomnumber,name:s.name,title:s.title});})); if(!occ.length) return '<p style="opacity:.5;font-size:13px;">Keine belegten Plätze.</p>'; return occ.map(o=>`<div style="display:flex;justify-content:space-between;align-items:center;padding:7px 10px;border:1px solid var(--border);border-radius:6px;font-size:13px;margin-bottom:6px;"><div><strong>${escapeHtml(o.name)}</strong>${o.title?`<span style="opacity:.6;margin-left:6px;">${escapeHtml(o.title)}</span>`:''}</div><div style="opacity:.45;font-size:12px;">${escapeHtml(o.room)}</div></div>`).join(''); })()
-        },
-        {
-            id: 'terminals', title: 'Terminals', icon: '🖥️',
-            html: (() => { const tl=Object.values(terminals); if(!tl.length) return '<p style="opacity:.5;font-size:13px;">Keine Terminals. <a href="/admin/terminals">Anlegen →</a></p>'; return tl.map(t=>{const asgn=roomList.find(r=>r.terminalId===t.id),mc=t.trmnlMode==='webhook'?'#059669':t.trmnlMode==='polling'?'#6366f1':'#6b7280',hasStatus=!!(t.trmnlDeviceApiKey&&t.trmnlDeviceMac),ivl=t.statusRefreshInterval||30; return `<div class="term-live-row" data-tid="${escapeHtml(t.id)}" data-interval="${ivl}" style="padding:8px 10px;border:1px solid var(--border);border-radius:6px;font-size:13px;margin-bottom:6px;"><div style="display:flex;justify-content:space-between;align-items:center;"><div><strong>${escapeHtml(t.name)}</strong>${asgn?`<span style="opacity:.5;margin-left:6px;">→ ${escapeHtml(asgn.abteilung)}</span>`:'<span style="opacity:.35;margin-left:6px;">nicht zugewiesen</span>'}</div><span style="font-size:11px;padding:2px 7px;border-radius:999px;background:${mc}22;color:${mc};font-weight:600;">${escapeHtml(t.trmnlMode||'none')}</span></div>${hasStatus?'<div class="ts-status" style="margin-top:5px;font-size:12px;opacity:.6;"><span class="ts-batt">🔋 –</span>&ensp;<span class="ts-wifi">📶 –</span>&ensp;<span class="ts-sleep"></span></div>':''}</div>`; }).join(''); })()
-        },
-        {
-            id: 'microsoft', title: 'Microsoft / Entra ID', icon: '🔷',
-            html: (() => { const cfg=microsoftConfig,en=appConfig.microsoftLoginEnabled,ok=!!(cfg.clientID&&cfg.tenantID&&cfg.clientSecret&&cfg.callbackURL); return `<div style="display:flex;flex-direction:column;gap:7px;font-size:13px;"><div style="display:flex;justify-content:space-between;padding:7px 10px;border:1px solid var(--border);border-radius:6px;"><span>Login aktiviert</span><span style="font-weight:600;color:${en?'#059669':'#6b7280'};">${en?'✅ Ja':'❌ Nein'}</span></div><div style="display:flex;justify-content:space-between;padding:7px 10px;border:1px solid var(--border);border-radius:6px;"><span>Konfiguriert</span><span style="font-weight:600;color:${ok?'#059669':'#f59e0b'};">${ok?'✅ Vollständig':'⚠️ Unvollständig'}</span></div>${cfg.tenantID?`<div style="padding:7px 10px;border:1px solid var(--border);border-radius:6px;opacity:.55;">Tenant: ${escapeHtml(cfg.tenantID)}</div>`:''}</div>`; })()
-        },
-        {
-            id: 'quick_actions', title: 'Schnellaktionen', icon: '⚡',
-            html: `<div style="display:flex;flex-wrap:wrap;gap:8px;">${[hasPermission(req,'rooms.create')?`<a href="/admin/rooms" class="small-link" style="padding:7px 13px;border:1px solid var(--border);border-radius:6px;text-decoration:none;font-size:13px;">+ Raum</a>`:'',hasPermission(req,'terminals.create')?`<a href="/admin/terminals" class="small-link" style="padding:7px 13px;border:1px solid var(--border);border-radius:6px;text-decoration:none;font-size:13px;">+ Terminal</a>`:'',hasPermission(req,'admins.create')?`<a href="/admin/admins" class="small-link" style="padding:7px 13px;border:1px solid var(--border);border-radius:6px;text-decoration:none;font-size:13px;">+ Admin</a>`:'',hasPermission(req,'links.view')?`<a href="/admin/links" class="small-link" style="padding:7px 13px;border:1px solid var(--border);border-radius:6px;text-decoration:none;font-size:13px;">🔗 Raumlinks</a>`:''].filter(Boolean).join('')}</div>`
-        },
-        {
-            id: 'my_permissions', title: 'Meine Rechte', icon: '👤',
-            html: formatAdminPermissions(currentAdmin)
-        },
-        {
-            id: 'admins_list', title: 'Admins', icon: '👥',
-            html: !hasPermission(req,'admins.view') ? '<p style="opacity:.5;font-size:13px;">Keine Berechtigung.</p>' :
-                `<div style="display:flex;flex-direction:column;gap:6px;">${admins.map(a=>`<div style="display:flex;justify-content:space-between;align-items:center;padding:7px 10px;border:1px solid var(--border);border-radius:6px;font-size:13px;"><span>${escapeHtml(a.displayName||a.username)}${a.master?' <span class="badge badge-master" style="font-size:10px;">MASTER</span>':''}</span><span style="opacity:.4;">${a.microsoft?'Microsoft':'Lokal'}</span></div>`).join('')}</div>`
-        }
-    ];
+            <div style="margin-top:12px;background:var(--border);border-radius:999px;height:7px;overflow:hidden;">
+                <div style="height:100%;width:${totalSeats ? Math.round(occupiedSeats / totalSeats * 100) : 0}%;background:#dc2626;border-radius:999px;"></div>
+            </div>
+            <div style="text-align:center;font-size:11px;opacity:.45;margin-top:4px;">${totalSeats ? Math.round(occupiedSeats / totalSeats * 100) : 0}% Auslastung</div>
+        </div>`;
 
-    // Widgets nach Berechtigungen filtern
-    const WIDGET_PERM_MAP = {
-        stats:          'rooms.view',
-        room_occupancy: 'rooms.view',
-        occupied_seats: 'rooms.view',
-        terminals:      'terminals.view',
-        microsoft:      'microsoft.view',
-        admins_list:    'admins.view',
-    };
-    const ALLOWED_WIDGETS = WIDGETS.filter(w => {
-        const perm = WIDGET_PERM_MAP[w.id];
-        return !perm || hasPermission(req, perm);
-    });
+    // --- Raumauslastung ---
+    const roomOccHtml = hasPermission(req, 'rooms.view') ? `
+        <div class="card">
+            <h2 style="margin:0 0 16px 0;font-size:16px;">🏢 Raumauslastung</h2>
+            ${roomList.length === 0 ? '<p style="opacity:.5;font-size:13px;">Keine Räume.</p>' :
+                roomList.map(r => {
+                    const tot = r.seats.length, occ = r.seats.filter(s => s.name && s.name !== 'Frei').length;
+                    const pct = tot ? Math.round(occ / tot * 100) : 0;
+                    const c   = pct === 100 ? '#dc2626' : pct > 50 ? '#f59e0b' : '#059669';
+                    return `<div style="margin-bottom:10px;">
+                        <div style="display:flex;justify-content:space-between;font-size:13px;margin-bottom:3px;">
+                            <span><strong>${escapeHtml(r.abteilung)}</strong> <span style="opacity:.5;">${escapeHtml(r.roomnumber)}</span></span>
+                            <span style="color:${c};">${occ}/${tot}</span>
+                        </div>
+                        <div style="background:var(--border);border-radius:999px;height:5px;overflow:hidden;">
+                            <div style="height:100%;width:${pct}%;background:${c};border-radius:999px;"></div>
+                        </div>
+                    </div>`;
+                }).join('')}
+        </div>` : '';
 
-    // Erlaubte Widgets als versteckte Templates rendern
-    const widgetTemplates = ALLOWED_WIDGETS.map(w =>
-        `<div id="wt_${w.id}" style="display:none;">${w.html}</div>`
-    ).join('');
+    // --- Terminals ---
+    const terminalsHtml = hasPermission(req, 'terminals.view') ? `
+        <div class="card">
+            <h2 style="margin:0 0 16px 0;font-size:16px;">🖥️ Terminals</h2>
+            ${terminalList.length === 0
+                ? '<p style="opacity:.5;font-size:13px;">Keine Terminals. <a href="/admin/terminals">Anlegen →</a></p>'
+                : terminalList.map(t => {
+                    const asgn = roomList.find(r => r.terminalId === t.id);
+                    const mc   = t.trmnlMode === 'webhook' ? '#059669' : t.trmnlMode === 'polling' ? '#6366f1' : '#6b7280';
+                    const hasStatus = !!(t.trmnlDeviceApiKey && t.trmnlDeviceMac);
+                    return `<div class="term-live-row" data-tid="${escapeHtml(t.id)}" data-interval="${t.statusRefreshInterval || 30}"
+                        style="padding:8px 10px;border:1px solid var(--border);border-radius:6px;font-size:13px;margin-bottom:6px;">
+                        <div style="display:flex;justify-content:space-between;align-items:center;">
+                            <div>
+                                <strong>${escapeHtml(t.name)}</strong>
+                                ${asgn ? `<span style="opacity:.5;margin-left:6px;">→ ${escapeHtml(asgn.abteilung)}</span>` : '<span style="opacity:.35;margin-left:6px;">nicht zugewiesen</span>'}
+                            </div>
+                            <span style="font-size:11px;padding:2px 7px;border-radius:999px;background:${mc}22;color:${mc};font-weight:600;">${escapeHtml(t.trmnlMode || 'none')}</span>
+                        </div>
+                        ${hasStatus ? '<div class="ts-status" style="margin-top:5px;font-size:12px;opacity:.6;"><span class="ts-batt">🔋 –</span>&ensp;<span class="ts-wifi">📶 –</span>&ensp;<span class="ts-sleep"></span></div>' : ''}
+                    </div>`;
+                }).join('')}
+        </div>` : '';
+
+    // --- Schnellaktionen ---
+    const quickLinks = [
+        hasPermission(req, 'rooms.create')    ? `<a href="/admin/rooms"     style="padding:8px 14px;border:1px solid var(--border);border-radius:6px;text-decoration:none;font-size:13px;">+ Raum</a>`     : '',
+        hasPermission(req, 'terminals.create')? `<a href="/admin/terminals" style="padding:8px 14px;border:1px solid var(--border);border-radius:6px;text-decoration:none;font-size:13px;">+ Terminal</a>` : '',
+        hasPermission(req, 'admins.create')   ? `<a href="/admin/admins"    style="padding:8px 14px;border:1px solid var(--border);border-radius:6px;text-decoration:none;font-size:13px;">+ Admin</a>`    : '',
+        hasPermission(req, 'links.view')      ? `<a href="/admin/links"     style="padding:8px 14px;border:1px solid var(--border);border-radius:6px;text-decoration:none;font-size:13px;">🔗 Raumlinks</a>` : '',
+    ].filter(Boolean);
+    const quickActionsHtml = quickLinks.length ? `
+        <div class="card">
+            <h2 style="margin:0 0 14px 0;font-size:16px;">⚡ Schnellaktionen</h2>
+            <div style="display:flex;flex-wrap:wrap;gap:8px;">${quickLinks.join('')}</div>
+        </div>` : '';
+
+    // --- Meine Rechte ---
+    const myPermsHtml = `
+        <div class="card">
+            <h2 style="margin:0 0 14px 0;font-size:16px;">👤 Meine Rechte</h2>
+            ${formatAdminPermissions(currentAdmin)}
+        </div>`;
+
+    // --- Microsoft ---
+    const microsoftHtml = hasPermission(req, 'microsoft.view') ? (() => {
+        const cfg = microsoftConfig, en = appConfig.microsoftLoginEnabled;
+        const ok  = !!(cfg.clientID && cfg.tenantID && cfg.clientSecret && cfg.callbackURL);
+        return `<div class="card">
+            <h2 style="margin:0 0 14px 0;font-size:16px;">🔷 Microsoft / Entra ID</h2>
+            <div style="display:flex;flex-direction:column;gap:7px;font-size:13px;">
+                <div style="display:flex;justify-content:space-between;padding:7px 10px;border:1px solid var(--border);border-radius:6px;">
+                    <span>Login aktiviert</span><span style="font-weight:600;color:${en ? '#059669' : '#6b7280'};">${en ? '✅ Ja' : '❌ Nein'}</span>
+                </div>
+                <div style="display:flex;justify-content:space-between;padding:7px 10px;border:1px solid var(--border);border-radius:6px;">
+                    <span>Konfiguriert</span><span style="font-weight:600;color:${ok ? '#059669' : '#f59e0b'};">${ok ? '✅ Vollständig' : '⚠️ Unvollständig'}</span>
+                </div>
+            </div>
+        </div>`;
+    })() : '';
+
+    // --- Admins ---
+    const adminsHtml = hasPermission(req, 'admins.view') ? `
+        <div class="card">
+            <h2 style="margin:0 0 14px 0;font-size:16px;">👥 Admins</h2>
+            <div style="display:flex;flex-direction:column;gap:6px;">
+                ${admins.map(a => `
+                <div style="display:flex;justify-content:space-between;align-items:center;padding:7px 10px;border:1px solid var(--border);border-radius:6px;font-size:13px;">
+                    <span>${escapeHtml(a.displayName || a.username)}${a.master ? ' <span class="badge badge-master" style="font-size:10px;">MASTER</span>' : ''}</span>
+                    <span style="opacity:.4;">${a.microsoft ? 'Microsoft' : 'Lokal'}</span>
+                </div>`).join('')}
+            </div>
+        </div>` : '';
 
     const content = `
-        ${widgetTemplates}
         <div class="topbar">
             <div>
                 <h1 class="page-title">Dashboard</h1>
-                <div class="muted">Angemeldet als ${escapeHtml(currentAdmin?.displayName||currentAdmin?.username||'Admin')} ${currentAdmin?.master?'<span class="badge badge-master">MASTER</span>':''}</div>
+                <div class="muted">Angemeldet als ${escapeHtml(currentAdmin?.displayName || currentAdmin?.username || 'Admin')} ${currentAdmin?.master ? '<span class="badge badge-master">MASTER</span>' : ''}</div>
             </div>
-            <button type="button" id="configBtn" onclick="openConfig()" style="display:flex;align-items:center;gap:6px;font-size:13px;">⚙️ Konfigurieren</button>
         </div>
-
-        <div id="dashGrid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(340px,1fr));gap:16px;align-items:start;min-height:120px;"></div>
-
-        <div id="dashEmpty" style="display:none;text-align:center;padding:60px 20px;opacity:.4;">
-            <div style="font-size:40px;margin-bottom:12px;">📊</div>
-            <div style="font-size:15px;">Dashboard ist leer</div>
-            <div style="font-size:13px;margin-top:6px;">Klicke auf <strong>Konfigurieren</strong> um Widgets hinzuzufügen</div>
+        <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(340px,1fr));gap:16px;align-items:start;">
+            ${statsHtml}
+            ${roomOccHtml}
+            ${terminalsHtml}
+            ${quickActionsHtml}
+            ${myPermsHtml}
+            ${microsoftHtml}
+            ${adminsHtml}
         </div>
-
-        <!-- Config panel created dynamically by JS -->
-
-        <!-- Drop indicator -->
-        <div id="dropIndicator" style="display:none;position:fixed;inset:0;background:rgba(99,102,241,.08);border:3px dashed #6366f1;z-index:150;pointer-events:none;border-radius:8px;"></div>
-
-        <style>
-        .dash-widget { position:relative; cursor:grab; }
-        .dash-widget:active { cursor:grabbing; }
-        .dash-widget .w-remove { display:none;position:absolute;top:10px;right:10px;background:none;border:none;cursor:pointer;font-size:16px;opacity:.4;padding:0;line-height:1; }
-        .dash-widget:hover .w-remove { display:block; }
-        .dash-widget .w-remove:hover { opacity:.9; }
-        .catalog-chip { padding:10px 14px;border:1px solid var(--border);border-radius:8px;cursor:grab;font-size:13px;user-select:none;display:flex;align-items:center;gap:8px;transition:background .15s; }
-        .catalog-chip:hover { background:var(--sidebar-hover); }
-        .catalog-chip.used { opacity:.35;cursor:not-allowed; }
-        .dash-widget.drag-over { outline:2px dashed #6366f1;outline-offset:3px; }
-        </style>
-
         <script>
-        var CATALOG = ${JSON.stringify(ALLOWED_WIDGETS.map(w => ({ id: w.id, title: w.title, icon: w.icon })))};
-        var DASH_KEY = 'deskview-dashboard-v2';
-        var SERVER_LAYOUT = ${JSON.stringify(Object.prototype.hasOwnProperty.call(dashboardLayouts, currentAdmin.username) ? dashboardLayouts[currentAdmin.username] : null)};
-        var DASH_CSRF = '${getCsrfToken(req)}';
         var _tsTimers = {};
-
-        // Standard-Widgets für neues Dashboard
-        var DEFAULT_LAYOUT = ${JSON.stringify(
-            ALLOWED_WIDGETS.filter(w => ['stats','room_occupancy','terminals','quick_actions','my_permissions'].includes(w.id)).map(w => w.id)
-        )};
-
-        // Server-Layout als initiale Quelle; ungültige Widget-IDs entfernen
-        if (SERVER_LAYOUT !== null) {
-            localStorage.setItem(DASH_KEY, JSON.stringify(
-                SERVER_LAYOUT.filter(function(id){ return CATALOG.some(function(c){ return c.id===id; }); })
-            ));
-        } else if (!localStorage.getItem(DASH_KEY)) {
-            // Erstes Login: Standard-Widgets setzen und sofort auf Server speichern
-            localStorage.setItem(DASH_KEY, JSON.stringify(DEFAULT_LAYOUT));
-            fetch('/admin/dashboard/save-layout', { method:'POST', headers:{'Content-Type':'application/x-www-form-urlencoded'}, body:'_csrf='+encodeURIComponent(DASH_CSRF)+'&layout='+encodeURIComponent(JSON.stringify(DEFAULT_LAYOUT)) });
-        }
-
-        function getLayout() { try { return JSON.parse(localStorage.getItem(DASH_KEY)||'[]'); } catch(e){ return []; } }
-        function saveLayout(arr) {
-            localStorage.setItem(DASH_KEY, JSON.stringify(arr));
-            fetch('/admin/dashboard/save-layout', { method:'POST', headers:{'Content-Type':'application/x-www-form-urlencoded'}, body:'_csrf='+encodeURIComponent(DASH_CSRF)+'&layout='+encodeURIComponent(JSON.stringify(arr)) });
-        }
-
-        function getWidgetContent(id) {
-            var tmpl = document.getElementById('wt_' + id);
-            return tmpl ? tmpl.innerHTML : '';
-        }
-
-        function buildWidget(id) {
-            var meta = CATALOG.find(function(c){ return c.id === id; });
-            if (!meta) return null;
-            var el = document.createElement('div');
-            el.className = 'card dash-widget';
-            el.setAttribute('data-widget', id);
-            el.draggable = true;
-            el.innerHTML =
-                '<button class="w-remove" onclick="removeWidget(\''+id+'\')" title="Entfernen">✕</button>' +
-                '<div style="display:flex;align-items:center;gap:8px;margin-bottom:14px;">' +
-                  '<span style="font-size:18px;">'+meta.icon+'</span>' +
-                  '<h2 style="margin:0;font-size:15px;">'+meta.title+'</h2>' +
-                '</div>' +
-                getWidgetContent(id);
-            // drag events for reordering
-            el.addEventListener('dragstart', function(e){ e.dataTransfer.setData('text/plain', 'move:'+id); e.dataTransfer.effectAllowed='move'; });
-            el.addEventListener('dragover', function(e){ e.preventDefault(); el.classList.add('drag-over'); });
-            el.addEventListener('dragleave', function(){ el.classList.remove('drag-over'); });
-            el.addEventListener('drop', function(e){
-                e.preventDefault(); el.classList.remove('drag-over');
-                var data = e.dataTransfer.getData('text/plain');
-                var dragId = data.replace(/^(move:|add:)/,'');
-                if (dragId === id) return;
-                var layout = getLayout();
-                var fromIdx = layout.indexOf(dragId);
-                var toIdx   = layout.indexOf(id);
-                if (fromIdx === -1) { layout.splice(toIdx, 0, dragId); }
-                else { layout.splice(fromIdx,1); toIdx = layout.indexOf(id); layout.splice(toIdx,0,dragId); }
-                saveLayout(layout); renderDash();
-            });
-            return el;
-        }
-
-        function renderDash() {
-            var grid = document.getElementById('dashGrid');
-            var empty = document.getElementById('dashEmpty');
-            var layout = getLayout();
-            grid.innerHTML = '';
-            layout.forEach(function(id){
-                var el = buildWidget(id);
-                if (el) grid.appendChild(el);
-            });
-            empty.style.display = layout.length === 0 ? 'block' : 'none';
-            buildCatalog();
-            refreshTerminalStatuses();
-        }
-
-        function buildCatalog() {
-            var layout = getLayout();
-            var cat = document.getElementById('widgetCatalog');
-            if (!cat) return;
-            cat.innerHTML = '';
-            CATALOG.forEach(function(w){
-                var used = layout.includes(w.id);
-                var chip = document.createElement('div');
-                chip.className = 'catalog-chip' + (used ? ' used' : '');
-                chip.innerHTML = '<span style="font-size:16px;">'+w.icon+'</span><span>'+w.title+'</span>' + (used ? '<span style="margin-left:auto;font-size:11px;opacity:.5;">aktiv</span>' : '');
-                if (!used) {
-                    chip.draggable = true;
-                    chip.addEventListener('dragstart', function(e){ e.dataTransfer.setData('text/plain','add:'+w.id); e.dataTransfer.effectAllowed='copy'; });
-                    chip.addEventListener('click', function(){ addWidget(w.id); });
-                }
-                cat.appendChild(chip);
-            });
-        }
-
-        function addWidget(id) {
-            var layout = getLayout();
-            if (layout.includes(id)) return;
-            layout.push(id);
-            saveLayout(layout); renderDash();
-        }
-
-        function removeWidget(id) {
-            var layout = getLayout().filter(function(x){ return x!==id; });
-            saveLayout(layout); renderDash();
-        }
-
-        function clearDash() {
-            if (!confirm('Dashboard wirklich leeren?')) return;
-            saveLayout([]); renderDash();
-        }
-
-        // Drop on grid (from catalog)
-        var grid = document.getElementById('dashGrid');
-        grid.addEventListener('dragover', function(e){ e.preventDefault(); document.getElementById('dropIndicator').style.display='block'; });
-        grid.addEventListener('dragleave', function(e){ if(!grid.contains(e.relatedTarget)) document.getElementById('dropIndicator').style.display='none'; });
-        grid.addEventListener('drop', function(e){
-            e.preventDefault(); document.getElementById('dropIndicator').style.display='none';
-            var data = e.dataTransfer.getData('text/plain');
-            if (data.startsWith('add:')) addWidget(data.slice(4));
-        });
-
-        function ensureConfigPanel() {
-            if (document.getElementById('configPanel')) return;
-            var ov = document.createElement('div');
-            ov.id = 'configOverlay';
-            ov.style.cssText = 'display:none;position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:9998;cursor:pointer;';
-            ov.addEventListener('click', closeConfig);
-            document.body.appendChild(ov);
-
-            var bg = getComputedStyle(document.documentElement).getPropertyValue('--card-bg').trim() || '#ffffff';
-            var bd = getComputedStyle(document.documentElement).getPropertyValue('--border').trim() || '#e5e7eb';
-            var tx = getComputedStyle(document.documentElement).getPropertyValue('--text').trim() || '#1f2937';
-
-            var pn = document.createElement('div');
-            pn.id = 'configPanel';
-            pn.style.cssText = 'display:none;position:fixed;top:0;right:0;width:300px;height:100vh;z-index:9999;flex-direction:column;box-shadow:-4px 0 30px rgba(0,0,0,.25);overflow:hidden;';
-            pn.style.backgroundColor = bg || '#ffffff';
-            pn.style.borderLeft = '1px solid ' + (bd || '#e5e7eb');
-            pn.innerHTML =
-                '<div style="padding:18px;border-bottom:1px solid '+(bd||'#e5e7eb')+';display:flex;justify-content:space-between;align-items:center;flex-shrink:0;">' +
-                  '<div><div style="font-weight:700;font-size:15px;">Widgets</div><div style="font-size:12px;opacity:.55;margin-top:2px;">Hinzufügen oder ziehen</div></div>' +
-                  '<button onclick="closeConfig()" style="background:none;border:none;cursor:pointer;font-size:22px;line-height:1;opacity:.5;padding:4px;">✕</button>' +
-                '</div>' +
-                '<div id="widgetCatalog" style="flex:1;overflow-y:auto;padding:12px;display:flex;flex-direction:column;gap:8px;"></div>' +
-                '<div style="padding:12px 18px;border-top:1px solid '+(bd||'#e5e7eb')+';flex-shrink:0;">' +
-                  '<button onclick="clearDash()" style="width:100%;background:none;border:1px solid '+(bd||'#e5e7eb')+';color:'+(tx||'#1f2937')+';font-size:13px;padding:8px;cursor:pointer;border-radius:6px;">Dashboard leeren</button>' +
-                '</div>';
-            document.body.appendChild(pn);
-        }
-
-        function openConfig() {
-            ensureConfigPanel();
-            buildCatalog();
-            document.getElementById('configOverlay').style.display = 'block';
-            document.getElementById('configPanel').style.display   = 'flex';
-        }
-        function closeConfig() {
-            var ov = document.getElementById('configOverlay');
-            var pn = document.getElementById('configPanel');
-            if (ov) ov.style.display = 'none';
-            if (pn) pn.style.display = 'none';
-        }
-
         function fetchTerminalStatus(tid, row) {
             fetch('/admin/terminals/status/' + encodeURIComponent(tid))
                 .then(function(r){ return r.json(); })
@@ -3249,47 +3114,27 @@ app.get('/admin', requireAdmin, requirePermission('dashboard.view'), (req, res) 
                     var wifiEl  = row.querySelector('.ts-wifi');
                     var sleepEl = row.querySelector('.ts-sleep');
                     if (battEl) battEl.textContent = '🔋 ' + (d.percent_charged != null ? Math.round(d.percent_charged) + '%' : '–');
-                    if (wifiEl)  wifiEl.textContent  = '📶 ' + (d.wifi_strength != null ? d.wifi_strength + '%' : '–');
+                    if (wifiEl)  wifiEl.textContent = '📶 ' + (d.wifi_strength   != null ? d.wifi_strength + '%' : '–');
                     if (sleepEl) sleepEl.textContent = d.sleep_mode_enabled ? '😴 An' : '';
                 })
                 .catch(function(){});
         }
-        function refreshTerminalStatuses() {
-            document.querySelectorAll('#dashGrid .term-live-row').forEach(function(row) {
+        document.addEventListener('DOMContentLoaded', function() {
+            document.querySelectorAll('.term-live-row').forEach(function(row) {
                 var tid = row.getAttribute('data-tid');
                 if (!tid) return;
                 fetchTerminalStatus(tid, row);
                 var ms = parseInt(row.getAttribute('data-interval') || '30', 10) * 60 * 1000;
                 if (_tsTimers[tid]) clearInterval(_tsTimers[tid]);
-                _tsTimers[tid] = setInterval(function() {
-                    var activeRow = document.querySelector('#dashGrid .term-live-row[data-tid="' + tid + '"]');
-                    if (activeRow) fetchTerminalStatus(tid, activeRow);
-                    else { clearInterval(_tsTimers[tid]); delete _tsTimers[tid]; }
-                }, ms);
+                _tsTimers[tid] = setInterval(function() { fetchTerminalStatus(tid, row); }, ms);
             });
-        }
-
-        document.addEventListener('DOMContentLoaded', renderDash);
+        });
         </script>
     `;
 
     res.send(renderAdminLayout(req, 'Dashboard', content));
 });
 
-app.post('/admin/dashboard/save-layout', requireAdmin, requirePermission('dashboard.view'), requireCsrf, (req, res) => {
-    try {
-        const admin = getCurrentAdmin(req);
-        let layout = [];
-        try { layout = JSON.parse(String(req.body.layout || '[]')); } catch(e) { layout = []; }
-        if (!Array.isArray(layout)) layout = [];
-        layout = layout.filter(id => typeof id === 'string' && id.length < 64);
-        dashboardLayouts[admin.username] = layout;
-        saveDashboardLayouts();
-        return res.json({ ok: true });
-    } catch(err) {
-        return res.status(500).json({ error: err.message });
-    }
-});
 
 /*
 ==================================================
