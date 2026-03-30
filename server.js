@@ -6189,21 +6189,25 @@ START
         const wss = new WebSocketServer({ noServer: true });
 
         httpServer.on('upgrade', (req, socket, head) => {
+            console.log('[WS] Upgrade-Anfrage:', req.url);
             if (req.url && req.url.startsWith('/admin/ssh/ws')) {
                 const urlParams = new URL(req.url, 'http://localhost');
                 const token = urlParams.searchParams.get('token');
                 const entry = token ? sshTokens.get(token) : null;
                 if (!entry || entry.expires < Date.now()) {
+                    console.log('[WS] Token ungültig oder abgelaufen');
                     socket.write('HTTP/1.1 401 Unauthorized\r\n\r\n');
                     socket.destroy();
                     return;
                 }
+                console.log('[WS] Token OK, WebSocket wird aufgebaut');
                 sshTokens.delete(token);
                 wss.handleUpgrade(req, socket, head, (ws) => {
                     ws._adminUsername = entry.adminUsername;
                     wss.emit('connection', ws, req);
                 });
             } else {
+                console.log('[WS] Unbekannter Upgrade-Pfad, wird abgelehnt');
                 socket.destroy();
             }
         });
