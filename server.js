@@ -56,6 +56,7 @@ const ROOMS_FILE = path.join(DATA_DIR, 'rooms.json');
 const ADMINS_FILE = path.join(DATA_DIR, 'admins.json');
 const CONFIG_FILE = path.join(DATA_DIR, 'config.json');
 const KEY_FILE = path.join(DATA_DIR, 'app.key');
+const TERMINALS_FILE = path.join(DATA_DIR, 'terminals.json');
 
 /*
 ==================================================
@@ -166,6 +167,15 @@ const PERMISSION_GROUPS = [
                 label: 'Logo verwalten',
                 description: 'Darf das Logo der Anwendung hochladen und ersetzen.'
             }
+        ]
+    },
+    {
+        title: 'Terminals',
+        permissions: [
+            { key: 'terminals.view',   label: 'Terminals anzeigen',   description: 'Darf TRMNL-Terminal-Geräte sehen.' },
+            { key: 'terminals.create', label: 'Terminals erstellen',   description: 'Darf neue TRMNL-Terminals anlegen.' },
+            { key: 'terminals.edit',   label: 'Terminals bearbeiten',  description: 'Darf TRMNL-Terminal-Einstellungen ändern.' },
+            { key: 'terminals.delete', label: 'Terminals löschen',     description: 'Darf TRMNL-Terminals entfernen.' }
         ]
     }
 ];
@@ -341,6 +351,7 @@ DATEN LADEN
 ==================================================
 */
 let rooms = ensureJsonFile(ROOMS_FILE, DEFAULT_ROOMS);
+let terminals = ensureJsonFile(TERMINALS_FILE, {});
 let admins = ensureJsonFile(ADMINS_FILE, []);
 let appConfig = ensureJsonFile(CONFIG_FILE, DEFAULT_CONFIG);
 
@@ -465,6 +476,14 @@ function renderSupportFooter(extraText = '') {
 
 function saveRooms() {
     writeJsonFile(ROOMS_FILE, rooms);
+}
+
+function saveTerminals() {
+    writeJsonFile(TERMINALS_FILE, terminals);
+}
+
+function getTerminal(id) {
+    return terminals[id] || null;
 }
 
 function saveAdmins() {
@@ -715,6 +734,7 @@ function renderSidebar(req) {
     const items = [
         hasPermission(req, 'dashboard.view') ? `<a href="/admin">&#9632; Dashboard</a>` : '',
         hasPermission(req, 'rooms.view') ? `<a href="/admin/rooms">&#9632; Räume</a>` : '',
+        hasPermission(req, 'terminals.view') ? `<a href="/admin/terminals">&#9632; Terminals</a>` : '',
         hasPermission(req, 'links.view') ? `<a href="/admin/links">&#9632; Raumlinks</a>` : '',
         hasPermission(req, 'admins.view') ? `<a href="/admin/admins">&#9632; Admins</a>` : '',
         hasPermission(req, 'microsoft.view') ? `<a href="/admin/microsoft">&#9632; Microsoft</a>` : '',
@@ -1636,27 +1656,20 @@ TRMNL PUSH
 ==================================================
 */
 async function pushToTrmnl(room) {
-    const mode = room.trmnlMode || 'none';
-    if (mode === 'none') return;
+    if (!room.terminalId) return;
+    const terminal = getTerminal(room.terminalId);
+    if (!terminal || terminal.trmnlMode !== 'webhook' || !terminal.trmnlWebhookUrl) return;
 
     const payload = renderRoomApiJson(room);
-
-    if (mode === 'webhook') {
-        // Webhook URL (Daten direkt pushen)
-        if (room.trmnlWebhookUrl) {
-            try {
-                await fetch(room.trmnlWebhookUrl, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ merge_variables: payload })
-                });
-            } catch (err) {
-                console.error(`TRMNL Webhook Push Fehler (${room.id}):`, err.message);
-            }
-        }
-
+    try {
+        await fetch(terminal.trmnlWebhookUrl, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ merge_variables: payload })
+        });
+    } catch (err) {
+        console.error(`TRMNL Webhook Push Fehler (${room.id}):`, err.message);
     }
-    // mode === 'polling': TRMNL holt Daten selbst, kein Push nötig
 }
 
 async function fetchMicrosoftUser(accessToken) {
@@ -3343,72 +3356,14 @@ app.get('/admin/rooms', requireAdmin, requirePermission('rooms.view'), (req, res
                             <label>Raumnummer</label>
                             <input type="text" name="roomnumber" value="${escapeHtml(room.roomnumber)}" required>
 
-                            <label>TRMNL Update-Modus</label>
-                            <select name="trmnlMode" id="trmnlMode_${escapeHtml(room.id)}" onchange="trmnlModeChange('${escapeHtml(room.id)}')" style="margin-bottom:12px;">
-                                <option value="none"    ${(room.trmnlMode||'none')==='none'    ? 'selected' : ''}>Kein TRMNL</option>
-                                <option value="polling" ${(room.trmnlMode||'none')==='polling' ? 'selected' : ''}>Polling (TRMNL zieht Daten selbst)</option>
-                                <option value="webhook" ${(room.trmnlMode||'none')==='webhook' ? 'selected' : ''}>Webhook / Push</option>
+                            <label>TRMNL Terminal <span style="font-weight:400;opacity:.6;">(optional)</span></label>
+                            <select name="terminalId">
+                                <option value="">– Kein Terminal –</option>
+                                ${Object.values(terminals).map(t => `<option value="${escapeHtml(t.id)}" ${room.terminalId === t.id ? 'selected' : ''}>${escapeHtml(t.name)}</option>`).join('')}
                             </select>
-
-                            <div id="trmnl_polling_${escapeHtml(room.id)}" style="display:${(room.trmnlMode||'none')==='polling' ? 'block' : 'none'}">
-                                <p style="font-size:13px;opacity:.7;margin-bottom:8px;">TRMNL fragt das Gerät selbst in einem Intervall ab. Kein Push von DeskView — stelle das Refresh-Intervall direkt in TRMNL ein.</p>
-                            </div>
-
-                            <div id="trmnl_webhook_${escapeHtml(room.id)}" style="display:${(room.trmnlMode||'none')==='webhook' ? 'block' : 'none'}">
-                                <p style="font-size:13px;opacity:.7;margin-bottom:8px;">Bei jeder Änderung werden die Daten an TRMNL gesendet. Das Gerät zeigt die Änderung beim nächsten Poll-Zyklus an.</p>
-
-                                <label>Webhook URL <span style="font-weight:400;opacity:.6;">(aus TRMNL Plugin → Webhook-Strategie)</span></label>
-                                <input type="text" name="trmnlWebhookUrl" value="${escapeHtml(room.trmnlWebhookUrl || '')}" placeholder="https://usetrmnl.com/api/custom_plugins/...">
-                            </div>
-
-                            <hr style="margin:20px 0;border:none;border-top:1px solid var(--border);">
-                            <h3 style="font-size:15px;margin:0 0 10px 0;">Sleep Schedule <span style="font-weight:400;opacity:.6;font-size:13px;">(optional – spart Akku nachts)</span></h3>
-                            <p style="font-size:13px;opacity:.7;margin-bottom:10px;">Das Gerät schläft außerhalb der Arbeitszeiten und aktualisiert nicht. Benötigt den TRMNL Device API Key.</p>
-
-                            <label>TRMNL Account API Key <span style="font-weight:400;opacity:.6;">(Account → Settings → API Key)</span></label>
-                            <input type="text" name="trmnlDeviceApiKey" value="${escapeHtml(room.trmnlDeviceApiKey || '')}" placeholder="Account API Key aus TRMNL Settings">
-
-                            <label>Device MAC-Adresse</label>
-                            <input type="text" name="trmnlDeviceMac" value="${escapeHtml(room.trmnlDeviceMac || '')}" placeholder="z. B. 08:92:72:65:F8:9C">
 
                             <button type="submit">Raum speichern</button>
                         </form>
-
-                        <div style="display:flex;gap:8px;margin-top:8px;flex-wrap:wrap;">
-                            <form id="trmnlTestForm_${escapeHtml(room.id)}" class="dev-only" style="margin:0;">
-                                <input type="hidden" name="_csrf" value="${getCsrfToken(req)}">
-                                <input type="hidden" name="roomId" value="${escapeHtml(room.id)}">
-                                <button type="button" onclick="testTrmnlPush('${escapeHtml(room.id)}')" style="background:#6b7280;">TRMNL Push testen</button>
-                            </form>
-                            <form id="trmnlStatusForm_${escapeHtml(room.id)}" style="margin:0;">
-                                <input type="hidden" name="_csrf" value="${getCsrfToken(req)}">
-                                <input type="hidden" name="roomId" value="${escapeHtml(room.id)}">
-                                <button type="button" onclick="loadDeviceStatus('${escapeHtml(room.id)}')" style="background:#6366f1;">Gerätestatus anzeigen</button>
-                            </form>
-                        </div>
-
-                        <div style="margin-top:16px;padding:14px;border:1px solid var(--border);border-radius:8px;">
-                            <h4 style="margin:0 0 10px 0;font-size:14px;">😴 Sleep Schedule</h4>
-                            <form id="trmnlSleepForm_${escapeHtml(room.id)}" style="margin:0;">
-                                <input type="hidden" name="_csrf" value="${getCsrfToken(req)}">
-                                <input type="hidden" name="roomId" value="${escapeHtml(room.id)}">
-                                <div style="display:flex;gap:16px;margin-bottom:10px;">
-                                    <div style="flex:1;">
-                                        <label style="font-size:13px;">Aktiv ab (Morgens)</label>
-                                        <input type="time" name="trmnlSleepEnd" value="${escapeHtml(room.trmnlSleepEnd || '07:00')}">
-                                    </div>
-                                    <div style="flex:1;">
-                                        <label style="font-size:13px;">Schlafen ab (Abends)</label>
-                                        <input type="time" name="trmnlSleepStart" value="${escapeHtml(room.trmnlSleepStart || '19:00')}">
-                                    </div>
-                                </div>
-                                <button type="button" onclick="saveSleepSchedule('${escapeHtml(room.id)}')" style="background:#059669;">Sleep Schedule speichern</button>
-                                <span id="trmnlSleepStatus_${escapeHtml(room.id)}" style="display:none;font-size:13px;margin-left:10px;"></span>
-                            </form>
-                        </div>
-                        <div id="trmnlDeviceStatus_${escapeHtml(room.id)}" style="display:none;margin-top:10px;background:#1e1e2e;color:#cdd6f4;padding:12px;border-radius:8px;font-size:13px;line-height:1.8;">
-                        </div>
-                        <pre id="trmnlTestResult_${escapeHtml(room.id)}" class="dev-only" style="display:none;margin-top:8px;background:#111;color:#0f0;padding:10px;border-radius:6px;font-size:12px;overflow:auto;max-height:200px;"></pre>
                         `
                         : `
                         <p><strong>Abteilung:</strong> ${escapeHtml(room.abteilung)}</p>
@@ -3558,11 +3513,8 @@ app.post('/admin/update-room', requireAdmin, requirePermission('rooms.edit'), re
 
         room.abteilung = String(req.body.abteilung || '').trim();
         room.roomnumber = String(req.body.roomnumber || '').trim();
-        room.trmnlMode = ['none','polling','webhook'].includes(req.body.trmnlMode) ? req.body.trmnlMode : 'none';
-        room.trmnlWebhookUrl = String(req.body.trmnlWebhookUrl || '').trim();
-        room.trmnlDeviceApiKey = String(req.body.trmnlDeviceApiKey || '').trim();
-        room.trmnlDeviceMac = String(req.body.trmnlDeviceMac || '').trim();
-        // trmnlSleepStart/End werden über Sleep Schedule Form gespeichert
+        const tid = String(req.body.terminalId || '').trim();
+        room.terminalId = tid && terminals[tid] ? tid : null;
 
 
         saveRooms();
@@ -3573,72 +3525,64 @@ app.post('/admin/update-room', requireAdmin, requirePermission('rooms.edit'), re
     }
 });
 
-app.post('/admin/test-trmnl-push', requireAdmin, requirePermission('rooms.edit'), requireCsrf, async (req, res) => {
-    const roomId = String(req.body.roomId || '').trim();
-    const room = getRoom(roomId);
-    if (!room) return res.status(404).json({ error: 'Raum nicht gefunden' });
+app.post('/admin/test-trmnl-push', requireAdmin, requirePermission('terminals.edit'), requireCsrf, async (req, res) => {
+    const terminalId = String(req.body.terminalId || '').trim();
+    const terminal = getTerminal(terminalId);
+    if (!terminal) return res.status(404).json({ error: 'Terminal nicht gefunden' });
+    if (terminal.trmnlMode !== 'webhook' || !terminal.trmnlWebhookUrl) return res.json({ error: 'Kein Webhook konfiguriert' });
 
-    const mode = room.trmnlMode || 'none';
-    if (mode === 'none') return res.json({ error: 'Kein TRMNL-Modus konfiguriert' });
-
-    const payload = renderRoomApiJson(room);
-    const results = [];
-
-    if (mode === 'webhook' && room.trmnlWebhookUrl) {
-        try {
-            const r = await fetch(room.trmnlWebhookUrl, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ merge_variables: payload })
-            });
-            const text = await r.text();
-            results.push({ type: 'Webhook URL', status: r.status, body: text.slice(0, 300) });
-        } catch (err) {
-            results.push({ type: 'Webhook URL', error: err.message });
-        }
-    }
-
-    return res.json({ results, payload });
-});
-
-app.post('/admin/device-status', requireAdmin, requirePermission('rooms.edit'), requireCsrf, async (req, res) => {
-    const roomId = String(req.body.roomId || '').trim();
-    const room = getRoom(roomId);
-    if (!room) return res.status(404).json({ error: 'Raum nicht gefunden' });
-    if (!room.trmnlDeviceApiKey || !room.trmnlDeviceMac) return res.status(400).json({ error: 'Account API Key und MAC-Adresse fehlen' });
+    const assignedRoom = Object.values(rooms).find(r => r.terminalId === terminalId);
+    const payload = assignedRoom ? renderRoomApiJson(assignedRoom) : { abteilung: 'Test', roomnumber: '-', seats: [] };
 
     try {
-        const headers = { 'Authorization': `Bearer ${room.trmnlDeviceApiKey}`, 'Content-Type': 'application/json' };
+        const r = await fetch(terminal.trmnlWebhookUrl, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ merge_variables: payload })
+        });
+        const text = await r.text();
+        return res.json({ results: [{ type: 'Webhook', status: r.status, body: text.slice(0, 300) }], payload });
+    } catch (err) {
+        return res.json({ results: [{ type: 'Webhook', error: err.message }], payload });
+    }
+});
+
+app.post('/admin/device-status', requireAdmin, requirePermission('terminals.view'), requireCsrf, async (req, res) => {
+    const terminalId = String(req.body.terminalId || '').trim();
+    const terminal = getTerminal(terminalId);
+    if (!terminal) return res.status(404).json({ error: 'Terminal nicht gefunden' });
+    if (!terminal.trmnlDeviceApiKey || !terminal.trmnlDeviceMac) return res.status(400).json({ error: 'Account API Key und MAC-Adresse fehlen' });
+
+    try {
+        const headers = { 'Authorization': `Bearer ${decryptValue(terminal.trmnlDeviceApiKey)}`, 'Content-Type': 'application/json' };
         const listRes = await fetch('https://usetrmnl.com/api/devices', { headers });
         if (!listRes.ok) return res.json({ error: `TRMNL Fehler: ${listRes.status}` });
 
         const list = await listRes.json();
         const devices = list.data || list.devices || list;
         const device = Array.isArray(devices)
-            ? devices.find(d => (d.mac_address || '').toUpperCase() === room.trmnlDeviceMac.toUpperCase())
+            ? devices.find(d => (d.mac_address || '').toUpperCase() === terminal.trmnlDeviceMac.toUpperCase())
             : null;
 
-        if (!device) return res.json({ error: `Gerät mit MAC ${room.trmnlDeviceMac} nicht gefunden` });
+        if (!device) return res.json({ error: `Gerät mit MAC ${terminal.trmnlDeviceMac} nicht gefunden` });
         return res.json({ device });
     } catch (err) {
         return res.json({ error: err.message });
     }
 });
 
-app.post('/admin/save-sleep-schedule', requireAdmin, requirePermission('rooms.edit'), requireCsrf, async (req, res) => {
-    const roomId = String(req.body.roomId || '').trim();
-    const room = getRoom(roomId);
-    if (!room) return res.status(404).json({ error: 'Raum nicht gefunden' });
-    if (!room.trmnlDeviceApiKey || !room.trmnlDeviceMac) return res.status(400).json({ error: 'Account API Key und MAC-Adresse fehlen' });
+app.post('/admin/save-sleep-schedule', requireAdmin, requirePermission('terminals.edit'), requireCsrf, async (req, res) => {
+    const terminalId = String(req.body.terminalId || '').trim();
+    const terminal = getTerminal(terminalId);
+    if (!terminal) return res.status(404).json({ error: 'Terminal nicht gefunden' });
+    if (!terminal.trmnlDeviceApiKey || !terminal.trmnlDeviceMac) return res.status(400).json({ error: 'Account API Key und MAC-Adresse fehlen' });
 
     try {
-        // Für /api/devices (GET + PATCH) immer Account API Key mit Bearer
         const headers = {
-            'Authorization': `Bearer ${room.trmnlDeviceApiKey}`,
+            'Authorization': `Bearer ${decryptValue(terminal.trmnlDeviceApiKey)}`,
             'Content-Type': 'application/json'
         };
 
-        // Gerät per MAC finden
         const listRes = await fetch('https://usetrmnl.com/api/devices', { headers });
         if (!listRes.ok) {
             const errText = await listRes.text();
@@ -3648,18 +3592,18 @@ app.post('/admin/save-sleep-schedule', requireAdmin, requirePermission('rooms.ed
         const list = await listRes.json();
         const devices = list.data || list.devices || list;
         const device = Array.isArray(devices)
-            ? devices.find(d => (d.mac_address || '').toUpperCase() === room.trmnlDeviceMac.toUpperCase())
+            ? devices.find(d => (d.mac_address || '').toUpperCase() === terminal.trmnlDeviceMac.toUpperCase())
             : null;
 
-        if (!device) return res.json({ error: `Gerät mit MAC ${room.trmnlDeviceMac} nicht gefunden`, all_devices: Array.isArray(devices) ? devices.map(d => d.mac_address) : devices });
+        if (!device) return res.json({ error: `Gerät mit MAC ${terminal.trmnlDeviceMac} nicht gefunden`, all_devices: Array.isArray(devices) ? devices.map(d => d.mac_address) : devices });
 
-        // Zeiten direkt aus Request lesen und in Room speichern
+        // Zeiten direkt aus Request lesen und in Terminal speichern
         const toMinutes = t => { const [h, m] = (t || '00:00').split(':').map(Number); return h * 60 + m; };
-        const sleepStart = String(req.body.trmnlSleepStart || room.trmnlSleepStart || '19:00').trim();
-        const sleepEnd   = String(req.body.trmnlSleepEnd   || room.trmnlSleepEnd   || '07:00').trim();
-        room.trmnlSleepStart = sleepStart;
-        room.trmnlSleepEnd   = sleepEnd;
-        saveRooms();
+        const sleepStart = String(req.body.trmnlSleepStart || terminal.trmnlSleepStart || '19:00').trim();
+        const sleepEnd   = String(req.body.trmnlSleepEnd   || terminal.trmnlSleepEnd   || '07:00').trim();
+        terminal.trmnlSleepStart = sleepStart;
+        terminal.trmnlSleepEnd   = sleepEnd;
+        saveTerminals();
 
         const patchBody = {
             device: {
@@ -3679,6 +3623,275 @@ app.post('/admin/save-sleep-schedule', requireAdmin, requirePermission('rooms.ed
         let body;
         try { body = JSON.parse(text); } catch(e) { body = text; }
         return res.json({ status: patchRes.status, body, device_id: device.id, sent: patchBody.device });
+    } catch (err) {
+        return res.json({ error: err.message });
+    }
+});
+
+/*
+==================================================
+TERMINALS ADMIN
+==================================================
+*/
+app.get('/admin/terminals', requireAdmin, requirePermission('terminals.view'), (req, res) => {
+    const terminalList = Object.values(terminals);
+
+    const cards = terminalList.map(t => {
+        const assignedRooms = Object.values(rooms).filter(r => r.terminalId === t.id);
+        const assignedText = assignedRooms.length > 0
+            ? 'Zugewiesen: ' + assignedRooms.map(r => escapeHtml(r.abteilung)).join(', ')
+            : 'Keinem Raum zugewiesen';
+
+        return `
+        <div class="card" style="margin-bottom:20px;">
+            <div class="topbar">
+                <h2 style="margin:0;font-size:18px;">${escapeHtml(t.name)}</h2>
+                <span class="badge">${escapeHtml(t.trmnlMode || 'none')}</span>
+            </div>
+            <p style="font-size:13px;opacity:.6;margin:4px 0 12px 0;">${assignedText}</p>
+
+            ${hasPermission(req, 'terminals.edit') ? `
+            <form method="POST" action="/admin/terminals/update">
+                ${csrfField(req)}
+                <input type="hidden" name="terminalId" value="${escapeHtml(t.id)}">
+
+                <label>Name</label>
+                <input type="text" name="name" value="${escapeHtml(t.name)}" required>
+
+                <label>Modus</label>
+                <select name="trmnlMode" id="trmnlMode_${escapeHtml(t.id)}" onchange="trmnlModeChange('${escapeHtml(t.id)}')">
+                    <option value="none"    ${(t.trmnlMode||'none')==='none'    ? 'selected' : ''}>Kein TRMNL</option>
+                    <option value="polling" ${(t.trmnlMode||'none')==='polling' ? 'selected' : ''}>Polling (TRMNL zieht Daten selbst)</option>
+                    <option value="webhook" ${(t.trmnlMode||'none')==='webhook' ? 'selected' : ''}>Webhook / Push</option>
+                </select>
+
+                <div id="trmnl_polling_${escapeHtml(t.id)}" style="display:${(t.trmnlMode||'none')==='polling' ? 'block' : 'none'}">
+                    <label>Plugin UUID <span style="font-weight:400;opacity:.6;">(aus TRMNL Plugin-Einstellungen)</span></label>
+                    <input type="text" name="trmnlPluginUuid" value="${escapeHtml(t.trmnlPluginUuid || '')}" placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx">
+                </div>
+
+                <div id="trmnl_webhook_${escapeHtml(t.id)}" style="display:${(t.trmnlMode||'none')==='webhook' ? 'block' : 'none'}">
+                    <p style="font-size:13px;opacity:.7;margin-bottom:8px;">Bei jeder Änderung werden die Daten an TRMNL gesendet. Das Gerät zeigt die Änderung beim nächsten Poll-Zyklus an.</p>
+                    <label>Webhook URL <span style="font-weight:400;opacity:.6;">(aus TRMNL Plugin → Webhook-Strategie)</span></label>
+                    <input type="text" name="trmnlWebhookUrl" value="${escapeHtml(t.trmnlWebhookUrl || '')}" placeholder="https://usetrmnl.com/api/custom_plugins/...">
+                </div>
+
+                <hr style="margin:20px 0;border:none;border-top:1px solid var(--border);">
+                <h3 style="font-size:15px;margin:0 0 10px 0;">Gerät <span style="font-weight:400;opacity:.6;font-size:13px;">(für Sleep Schedule &amp; Status)</span></h3>
+
+                <label>TRMNL Account API Key <span style="font-weight:400;opacity:.6;">(Account → Settings → API Key)</span></label>
+                <div class="field-wrap">
+                    <input type="password" id="trmnlApiKey_${escapeHtml(t.id)}" name="trmnlDeviceApiKey" value="${escapeHtml(decryptValue(t.trmnlDeviceApiKey) || '')}" placeholder="Account API Key" autocomplete="off">
+                    <button type="button" class="eye-btn" data-eye="trmnlApiKey_${escapeHtml(t.id)}" onclick="toggleVis('trmnlApiKey_${escapeHtml(t.id)}')">&#128065;</button>
+                </div>
+
+                <label>Device MAC-Adresse</label>
+                <div class="field-wrap">
+                    <input type="password" id="trmnlMac_${escapeHtml(t.id)}" name="trmnlDeviceMac" value="${escapeHtml(t.trmnlDeviceMac || '')}" placeholder="z. B. 08:92:72:65:F8:9C" autocomplete="off">
+                    <button type="button" class="eye-btn" data-eye="trmnlMac_${escapeHtml(t.id)}" onclick="toggleVis('trmnlMac_${escapeHtml(t.id)}')">&#128065;</button>
+                </div>
+
+                <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:8px;">
+                    <button type="submit">Terminal speichern</button>
+                    <button type="button" onclick="syncTerminalName('${escapeHtml(t.id)}')" style="background:#6366f1;">↻ Name aus TRMNL</button>
+                </div>
+            </form>
+
+            <div style="display:flex;gap:8px;margin-top:8px;flex-wrap:wrap;">
+                <form id="trmnlTestForm_${escapeHtml(t.id)}" class="dev-only" style="margin:0;">
+                    <input type="hidden" name="_csrf" value="${getCsrfToken(req)}">
+                    <input type="hidden" name="terminalId" value="${escapeHtml(t.id)}">
+                    <button type="button" onclick="testTrmnlPushT('${escapeHtml(t.id)}')" style="background:#6b7280;">Push testen</button>
+                </form>
+                <form id="trmnlStatusForm_${escapeHtml(t.id)}" style="margin:0;">
+                    <input type="hidden" name="_csrf" value="${getCsrfToken(req)}">
+                    <input type="hidden" name="terminalId" value="${escapeHtml(t.id)}">
+                    <button type="button" onclick="loadDeviceStatusT('${escapeHtml(t.id)}')" style="background:#6366f1;">Gerätestatus</button>
+                </form>
+            </div>
+            <div id="trmnlDeviceStatus_${escapeHtml(t.id)}" style="display:none;margin-top:10px;background:#1e1e2e;color:#cdd6f4;padding:12px;border-radius:8px;font-size:13px;line-height:1.8;"></div>
+            <pre id="trmnlTestResult_${escapeHtml(t.id)}" class="dev-only" style="display:none;margin-top:8px;background:#111;color:#0f0;padding:10px;border-radius:6px;font-size:12px;overflow:auto;max-height:200px;"></pre>
+
+            <div style="margin-top:16px;padding:14px;border:1px solid var(--border);border-radius:8px;">
+                <h4 style="margin:0 0 10px 0;font-size:14px;">😴 Sleep Schedule</h4>
+                <form id="trmnlSleepForm_${escapeHtml(t.id)}" style="margin:0;">
+                    <input type="hidden" name="_csrf" value="${getCsrfToken(req)}">
+                    <input type="hidden" name="terminalId" value="${escapeHtml(t.id)}">
+                    <div style="display:flex;gap:16px;margin-bottom:10px;">
+                        <div style="flex:1;">
+                            <label style="font-size:13px;">Aktiv ab (Morgens)</label>
+                            <input type="time" name="trmnlSleepEnd" value="${escapeHtml(t.trmnlSleepEnd || '07:00')}">
+                        </div>
+                        <div style="flex:1;">
+                            <label style="font-size:13px;">Schlafen ab (Abends)</label>
+                            <input type="time" name="trmnlSleepStart" value="${escapeHtml(t.trmnlSleepStart || '19:00')}">
+                        </div>
+                    </div>
+                    <button type="button" onclick="saveSleepScheduleT('${escapeHtml(t.id)}')" style="background:#059669;">Sleep Schedule speichern</button>
+                    <span id="trmnlSleepStatus_${escapeHtml(t.id)}" style="display:none;font-size:13px;margin-left:10px;"></span>
+                </form>
+            </div>
+            ` : ''}
+
+            ${hasPermission(req, 'terminals.delete') ? `
+            <form method="POST" action="/admin/terminals/delete" style="margin-top:16px;" onsubmit="return confirm('Terminal wirklich löschen?')">
+                ${csrfField(req)}
+                <input type="hidden" name="terminalId" value="${escapeHtml(t.id)}">
+                <button type="submit" class="btn-danger">Terminal löschen</button>
+            </form>
+            ` : ''}
+        </div>`;
+    }).join('');
+
+    const createForm = hasPermission(req, 'terminals.create') ? `
+    <div class="card" style="margin-bottom:20px;">
+        <h2 style="margin:0 0 16px 0;font-size:16px;">Neues Terminal anlegen</h2>
+        <form method="POST" action="/admin/terminals/create">
+            ${csrfField(req)}
+            <label>Name <span style="font-weight:400;opacity:.6;">(z. B. "Demo 1" oder "Raum 201")</span></label>
+            <input type="text" name="name" required placeholder="Terminal Name">
+            <button type="submit">Terminal erstellen</button>
+        </form>
+    </div>` : '';
+
+    const content = `
+    <div class="topbar"><h1>Terminals</h1></div>
+    ${createForm}
+    ${cards || '<div class="card"><p style="opacity:.6;">Noch keine Terminals vorhanden.</p></div>'}
+    <script>
+        function trmnlModeChange(tid) {
+            var sel = document.getElementById('trmnlMode_' + tid);
+            if (!sel) return;
+            var mode = sel.value;
+            var pollingEl = document.getElementById('trmnl_polling_' + tid);
+            var webhookEl = document.getElementById('trmnl_webhook_' + tid);
+            if (pollingEl) pollingEl.style.display = mode === 'polling' ? 'block' : 'none';
+            if (webhookEl) webhookEl.style.display = mode === 'webhook' ? 'block' : 'none';
+        }
+        async function syncTerminalName(tid) {
+            var formEl = document.querySelector('input[value="' + tid + '"][name="terminalId"]');
+            if (!formEl) return;
+            var card = formEl.closest('.card');
+            var nameEl = card ? card.querySelector('input[name="name"]') : null;
+            var csrf = card ? card.querySelector('input[name="_csrf"]') : null;
+            if (!nameEl) { alert('Bitte erst API Key und MAC speichern.'); return; }
+            var fd = new FormData();
+            fd.append('_csrf', csrf ? csrf.value : '');
+            fd.append('terminalId', tid);
+            var r = await fetch('/admin/terminals/sync-name', { method:'POST', headers:{'Content-Type':'application/x-www-form-urlencoded'}, body: new URLSearchParams(fd).toString() });
+            var data; try { data = JSON.parse(await r.text()); } catch(e) { alert('Fehler'); return; }
+            if (data.error) { alert('Fehler: ' + data.error); return; }
+            if (data.name) { nameEl.value = data.name; alert('Name synchronisiert: ' + data.name); }
+        }
+        async function saveSleepScheduleT(tid) {
+            var statusEl = document.getElementById('trmnlSleepStatus_' + tid);
+            var form = document.getElementById('trmnlSleepForm_' + tid);
+            if (statusEl) { statusEl.style.display='block'; statusEl.textContent='Speichere...'; statusEl.style.color=''; }
+            try {
+                var r = await fetch('/admin/save-sleep-schedule', { method:'POST', headers:{'Content-Type':'application/x-www-form-urlencoded'}, body: new URLSearchParams(new FormData(form)).toString() });
+                var data; try { data = JSON.parse(await r.text()); } catch(e) { data = {}; }
+                var ok = !data.error && (data.status === 200 || data.status === 204);
+                if (statusEl) { statusEl.textContent = ok ? '✅ Gespeichert' : '❌ ' + (data.error||'Fehler'); statusEl.style.color = ok ? '#059669' : '#dc2626'; }
+                if (window._devMode) { var pre = document.getElementById('trmnlTestResult_'+tid); if(pre){pre.style.display='block';pre.textContent=JSON.stringify(data,null,2);} }
+            } catch(e) { if(statusEl){statusEl.textContent='❌ '+e.message;statusEl.style.color='#dc2626';} }
+        }
+        async function testTrmnlPushT(tid) {
+            var resultEl = document.getElementById('trmnlTestResult_' + tid);
+            var form = document.getElementById('trmnlTestForm_' + tid);
+            if (resultEl) { resultEl.style.display='block'; resultEl.textContent='Teste Push...'; }
+            try {
+                var r = await fetch('/admin/test-trmnl-push', { method:'POST', headers:{'Content-Type':'application/x-www-form-urlencoded'}, body: new URLSearchParams(new FormData(form)).toString() });
+                var data; try { data = JSON.parse(await r.text()); } catch(e) { data = await r.text(); }
+                if (resultEl) resultEl.textContent = typeof data==='string' ? data : JSON.stringify(data,null,2);
+            } catch(e) { if(resultEl) resultEl.textContent='Fehler: '+e.message; }
+        }
+        async function loadDeviceStatusT(tid) {
+            var statusEl = document.getElementById('trmnlDeviceStatus_' + tid);
+            var form = document.getElementById('trmnlStatusForm_' + tid);
+            statusEl.style.display='block'; statusEl.innerHTML='Lade...';
+            try {
+                var r = await fetch('/admin/device-status', { method:'POST', headers:{'Content-Type':'application/x-www-form-urlencoded'}, body: new URLSearchParams(new FormData(form)).toString() });
+                var data; try { data = JSON.parse(await r.text()); } catch(e) { statusEl.innerHTML='Fehler'; return; }
+                if (data.error) { statusEl.innerHTML='❌ '+data.error; return; }
+                var d = data.device;
+                var battPct = d.percent_charged!=null ? Math.round(d.percent_charged)+'%' : '–';
+                var battV   = d.battery_voltage!=null ? d.battery_voltage.toFixed(2)+' V' : '–';
+                var rssi    = d.rssi!=null ? d.rssi+' dBm' : '–';
+                var wifi    = d.wifi_strength!=null ? d.wifi_strength+'%' : '–';
+                var sleep   = d.sleep_mode_enabled ? '✅ An' : '❌ Aus';
+                var sleepT  = d.sleep_mode_enabled ? (mtt(d.sleep_start_time)+' – '+mtt(d.sleep_end_time)) : '–';
+                statusEl.innerHTML = '<b>🔋 Akku:</b> '+battPct+' ('+battV+')<br><b>📶 WLAN:</b> '+wifi+' (RSSI: '+rssi+')<br><b>😴 Schlafmodus:</b> '+sleep+' '+sleepT;
+            } catch(e) { statusEl.innerHTML='Fehler: '+e.message; }
+        }
+        function mtt(min) { if(min==null)return'–'; return String(Math.floor(min/60)).padStart(2,'0')+':'+String(min%60).padStart(2,'0'); }
+    </script>`;
+
+    res.send(renderAdminLayout(req, 'Terminals', content));
+});
+
+app.post('/admin/terminals/create', requireAdmin, requirePermission('terminals.create'), requireCsrf, (req, res) => {
+    try {
+        const name = String(req.body.name || '').trim();
+        if (!name) return res.status(400).send('Name fehlt');
+        const id = 'terminal_' + Date.now();
+        terminals[id] = { id, name, trmnlMode: 'none', trmnlWebhookUrl: '', trmnlPluginUuid: '', trmnlDeviceApiKey: '', trmnlDeviceMac: '', trmnlSleepStart: '19:00', trmnlSleepEnd: '07:00' };
+        saveTerminals();
+        return res.redirect('/admin/terminals');
+    } catch (err) {
+        return res.status(500).send('Fehler beim Erstellen');
+    }
+});
+
+app.post('/admin/terminals/update', requireAdmin, requirePermission('terminals.edit'), requireCsrf, (req, res) => {
+    try {
+        const terminalId = String(req.body.terminalId || '').trim();
+        const terminal = getTerminal(terminalId);
+        if (!terminal) return res.status(404).send('Terminal nicht gefunden');
+        terminal.name = String(req.body.name || '').trim() || terminal.name;
+        terminal.trmnlMode = ['none','polling','webhook'].includes(req.body.trmnlMode) ? req.body.trmnlMode : 'none';
+        terminal.trmnlWebhookUrl = String(req.body.trmnlWebhookUrl || '').trim();
+        terminal.trmnlPluginUuid = String(req.body.trmnlPluginUuid || '').trim();
+        const rawApiKey = String(req.body.trmnlDeviceApiKey || '').trim();
+        terminal.trmnlDeviceApiKey = rawApiKey ? encryptValue(rawApiKey) : (terminal.trmnlDeviceApiKey || '');
+        terminal.trmnlDeviceMac = String(req.body.trmnlDeviceMac || '').trim();
+        saveTerminals();
+        return res.redirect('/admin/terminals');
+    } catch (err) {
+        return res.status(500).send('Fehler beim Speichern');
+    }
+});
+
+app.post('/admin/terminals/delete', requireAdmin, requirePermission('terminals.delete'), requireCsrf, (req, res) => {
+    try {
+        const terminalId = String(req.body.terminalId || '').trim();
+        if (!terminals[terminalId]) return res.status(404).send('Terminal nicht gefunden');
+        delete terminals[terminalId];
+        Object.values(rooms).forEach(r => { if (r.terminalId === terminalId) r.terminalId = null; });
+        saveTerminals();
+        saveRooms();
+        return res.redirect('/admin/terminals');
+    } catch (err) {
+        return res.status(500).send('Fehler beim Löschen');
+    }
+});
+
+app.post('/admin/terminals/sync-name', requireAdmin, requirePermission('terminals.edit'), requireCsrf, async (req, res) => {
+    const terminalId = String(req.body.terminalId || '').trim();
+    const terminal = getTerminal(terminalId);
+    if (!terminal) return res.status(404).json({ error: 'Terminal nicht gefunden' });
+    if (!terminal.trmnlDeviceApiKey || !terminal.trmnlDeviceMac) return res.status(400).json({ error: 'API Key und MAC fehlen' });
+    try {
+        const headers = { 'Authorization': `Bearer ${decryptValue(terminal.trmnlDeviceApiKey)}`, 'Content-Type': 'application/json' };
+        const listRes = await fetch('https://usetrmnl.com/api/devices', { headers });
+        if (!listRes.ok) return res.json({ error: `TRMNL Fehler: ${listRes.status}` });
+        const list = await listRes.json();
+        const devices = list.data || list.devices || list;
+        const device = Array.isArray(devices)
+            ? devices.find(d => (d.mac_address || '').toUpperCase() === terminal.trmnlDeviceMac.toUpperCase())
+            : null;
+        if (!device) return res.json({ error: 'Gerät nicht gefunden' });
+        if (device.name) { terminal.name = device.name; saveTerminals(); }
+        return res.json({ name: terminal.name });
     } catch (err) {
         return res.json({ error: err.message });
     }
