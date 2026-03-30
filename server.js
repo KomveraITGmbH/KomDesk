@@ -3323,7 +3323,7 @@ app.get('/admin', requireAdmin, requirePermission('dashboard.view'), (req, res) 
         }
         function srvFetch() {
             fetch('/admin/server/stats')
-                .then(function(r){ return r.json(); })
+                .then(function(r){ return r.ok ? r.json() : Promise.reject(r.status); })
                 .then(function(d) {
                     var cpuEl  = document.getElementById('srv-cpu');
                     var cpuBar = document.getElementById('srv-cpu-bar');
@@ -3505,10 +3505,8 @@ app.get('/admin', requireAdmin, requirePermission('dashboard.view'), (req, res) 
                 if (_tsTimers[tid]) clearInterval(_tsTimers[tid]);
                 _tsTimers[tid] = setInterval(function() { fetchTerminalStatus(tid, row); }, ms);
             });
-            if (document.getElementById('srv-cpu')) {
-                srvFetch();
-                setInterval(srvFetch, 5000);
-            }
+            srvFetch();
+            setInterval(srvFetch, 5000);
         });
         </script>
     `;
