@@ -6017,32 +6017,12 @@ setInterval(() => {
 
 app.get('/admin/ssh', requireAdmin, requirePermission('server.ssh'), (req, res) => {
     const content = `
-        <div class="topbar"><h1 class="page-title">SSH-Konsole</h1></div>
-        <div class="card">
-            <div style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:16px;">
-                <div style="flex:1;min-width:160px;">
-                    <label>Host</label>
-                    <input id="ssh-host" type="text" value="127.0.0.1" style="width:100%;">
-                </div>
-                <div style="min-width:80px;">
-                    <label>Port</label>
-                    <input id="ssh-port" type="number" value="22" style="width:100%;">
-                </div>
-                <div style="flex:1;min-width:160px;">
-                    <label>Benutzer</label>
-                    <input id="ssh-user" type="text" autocomplete="off" style="width:100%;">
-                </div>
-                <div style="flex:1;min-width:160px;">
-                    <label>Passwort</label>
-                    <input id="ssh-pass" type="password" autocomplete="off" style="width:100%;">
-                </div>
-            </div>
-            <div style="display:flex;gap:8px;margin-bottom:16px;">
-                <button id="ssh-connect-btn" onclick="sshConnect()">Verbinden</button>
-                <button id="ssh-disconnect-btn" onclick="sshDisconnect()" class="btn-danger" style="display:none;">Trennen</button>
-            </div>
-            <div id="ssh-status" style="font-size:13px;opacity:.6;margin-bottom:8px;"></div>
-            <div id="ssh-terminal-wrap" style="display:none;background:#0f0f0f;border-radius:10px;padding:8px;overflow:hidden;">
+        <div class="topbar">
+            <h1 class="page-title">SSH-Konsole</h1>
+            <button onclick="sshDisconnect()" id="ssh-disconnect-btn" class="btn-danger" style="display:none;padding:6px 14px;font-size:13px;">Trennen</button>
+        </div>
+        <div class="card" style="padding:0;overflow:hidden;">
+            <div style="background:#0f0f0f;border-radius:10px;padding:8px;">
                 <div id="ssh-terminal"></div>
             </div>
         </div>
@@ -6051,24 +6031,31 @@ app.get('/admin/ssh', requireAdmin, requirePermission('server.ssh'), (req, res) 
         <script src="https://cdn.jsdelivr.net/npm/xterm@5.3.0/lib/xterm.min.js"></script>
         <script src="https://cdn.jsdelivr.net/npm/xterm-addon-fit@0.8.0/lib/xterm-addon-fit.min.js"></script>
         <script>
-        var sshWs = null;
+        var sshWs   = null;
         var sshTerm = null;
         var fitAddon = null;
 
-        function sshSetStatus(msg) {
-            document.getElementById('ssh-status').textContent = msg;
+        // Login-State
+        var sshState    = 'user';   // 'user' | 'pass' | 'connected'
+        var sshUsername = '';
+        var sshInput    = '';
+
+        function sshWrite(text) { sshTerm.write(text); }
+
+        function sshPromptUser() {
+            sshState = 'user';
+            sshInput = '';
+            sshWrite('\\r\\nBenutzername: ');
         }
 
-        function sshConnect() {
-            var host = document.getElementById('ssh-host').value.trim();
-            var port = parseInt(document.getElementById('ssh-port').value) || 22;
-            var user = document.getElementById('ssh-user').value.trim();
-            var pass = document.getElementById('ssh-pass').value;
-            if (!host || !user || !pass) { sshSetStatus('Bitte alle Felder ausfüllen.'); return; }
+        function sshPromptPass() {
+            sshState = 'pass';
+            sshInput = '';
+            sshWrite('Passwort: ');
+        }
 
-            sshSetStatus('Verbindung wird hergestellt\u2026');
-            document.getElementById('ssh-connect-btn').disabled = true;
-
+        function sshConnect(username, password) {
+            sshWrite('\\r\\nVerbindung wird hergestellt\\u2026\\r\\n');
             fetch('/admin/ssh/token', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
@@ -6076,58 +6063,94 @@ app.get('/admin/ssh', requireAdmin, requirePermission('server.ssh'), (req, res) 
             })
             .then(function(r) { return r.json(); })
             .then(function(d) {
-                if (!d.token) { sshSetStatus('Token-Fehler.'); document.getElementById('ssh-connect-btn').disabled = false; return; }
-
+                if (!d.token) { sshWrite('\\r\\nFehler: Kein Token erhalten.\\r\\n'); sshPromptUser(); return; }
                 var proto = location.protocol === 'https:' ? 'wss' : 'ws';
                 sshWs = new WebSocket(proto + '://' + location.host + '/admin/ssh/ws?token=' + encodeURIComponent(d.token));
                 sshWs.onopen = function() {
-                    sshWs.send(JSON.stringify({ host: host, port: port, username: user, password: pass }));
+                    sshWs.send(JSON.stringify({ host: '127.0.0.1', port: 22, username: username, password: password }));
                 };
                 sshWs.onmessage = function(e) {
                     var msg = JSON.parse(e.data);
                     if (msg.type === 'ready') {
-                        sshSetStatus('Verbunden mit ' + host);
+                        sshState = 'connected';
                         document.getElementById('ssh-disconnect-btn').style.display = '';
-                        document.getElementById('ssh-connect-btn').style.display = 'none';
-                        document.getElementById('ssh-terminal-wrap').style.display = '';
-                        if (!sshTerm) {
-                            sshTerm = new Terminal({ cursorBlink: true, fontSize: 13, theme: { background: '#0f0f0f' } });
-                            fitAddon = new FitAddon.FitAddon();
-                            sshTerm.loadAddon(fitAddon);
-                            sshTerm.open(document.getElementById('ssh-terminal'));
-                            fitAddon.fit();
-                            sshTerm.onData(function(data) {
-                                if (sshWs && sshWs.readyState === 1) sshWs.send(JSON.stringify({ type: 'data', data: data }));
-                            });
-                            window.addEventListener('resize', function() { if (fitAddon) fitAddon.fit(); });
-                        }
+                        var dims = fitAddon.proposeDimensions();
+                        if (dims) sshWs.send(JSON.stringify({ type: 'resize', cols: dims.cols, rows: dims.rows }));
                     } else if (msg.type === 'data') {
-                        if (sshTerm) sshTerm.write(msg.data);
+                        sshTerm.write(msg.data);
                     } else if (msg.type === 'error') {
-                        sshSetStatus('Fehler: ' + msg.message);
-                        sshCleanup();
+                        sshWrite('\\r\\nFehler: ' + msg.message + '\\r\\n');
+                        sshState = 'user';
+                        document.getElementById('ssh-disconnect-btn').style.display = 'none';
+                        sshPromptUser();
                     } else if (msg.type === 'close') {
-                        sshSetStatus('Verbindung getrennt.');
-                        sshCleanup();
+                        sshWrite('\\r\\nVerbindung getrennt.\\r\\n');
+                        sshState = 'user';
+                        document.getElementById('ssh-disconnect-btn').style.display = 'none';
+                        sshPromptUser();
                     }
                 };
-                sshWs.onerror = function() { sshSetStatus('WebSocket-Fehler.'); sshCleanup(); };
-                sshWs.onclose = function() { sshSetStatus('Verbindung geschlossen.'); sshCleanup(); };
+                sshWs.onerror = function() { sshWrite('\\r\\nWebSocket-Fehler.\\r\\n'); sshPromptUser(); };
+                sshWs.onclose = function() {
+                    if (sshState === 'connected') { sshWrite('\\r\\nVerbindung geschlossen.\\r\\n'); sshPromptUser(); }
+                    sshState = 'user';
+                    document.getElementById('ssh-disconnect-btn').style.display = 'none';
+                };
             })
-            .catch(function() { sshSetStatus('Verbindungsfehler.'); document.getElementById('ssh-connect-btn').disabled = false; });
+            .catch(function() { sshWrite('\\r\\nVerbindungsfehler.\\r\\n'); sshPromptUser(); });
         }
 
         function sshDisconnect() {
-            if (sshWs) sshWs.close();
-            sshSetStatus('Getrennt.');
-            sshCleanup();
+            if (sshWs) { sshWs.close(); sshWs = null; }
+            sshWrite('\\r\\nGetrennt.\\r\\n');
+            sshState = 'user';
+            document.getElementById('ssh-disconnect-btn').style.display = 'none';
+            sshPromptUser();
         }
 
-        function sshCleanup() {
-            document.getElementById('ssh-connect-btn').disabled = false;
-            document.getElementById('ssh-connect-btn').style.display = '';
-            document.getElementById('ssh-disconnect-btn').style.display = 'none';
-        }
+        window.addEventListener('load', function() {
+            sshTerm = new Terminal({ cursorBlink: true, fontSize: 13, theme: { background: '#0f0f0f' }, convertEol: true });
+            fitAddon = new FitAddon.FitAddon();
+            sshTerm.loadAddon(fitAddon);
+            sshTerm.open(document.getElementById('ssh-terminal'));
+            fitAddon.fit();
+            window.addEventListener('resize', function() { fitAddon.fit(); });
+
+            sshTerm.onData(function(data) {
+                if (sshState === 'connected') {
+                    if (sshWs && sshWs.readyState === 1) sshWs.send(JSON.stringify({ type: 'data', data: data }));
+                    return;
+                }
+                // Login-Eingabe im Terminal verarbeiten
+                var code = data.charCodeAt(0);
+                if (data === '\\r') {
+                    // Enter
+                    if (sshState === 'user') {
+                        sshUsername = sshInput.trim();
+                        sshWrite('\\r\\n');
+                        if (sshUsername) { sshPromptPass(); }
+                    } else if (sshState === 'pass') {
+                        var password = sshInput;
+                        sshWrite('\\r\\n');
+                        sshConnect(sshUsername, password);
+                    }
+                } else if (code === 127 || code === 8) {
+                    // Backspace
+                    if (sshInput.length > 0) {
+                        sshInput = sshInput.slice(0, -1);
+                        if (sshState === 'user') sshWrite('\\b \\b');
+                    }
+                } else if (code >= 32) {
+                    sshInput += data;
+                    if (sshState === 'user') sshWrite(data);
+                    // Passwort nicht anzeigen
+                }
+            });
+
+            sshWrite('SSH-Konsole \\u2014 localhost\\r\\n');
+            sshWrite('\\u2500'.repeat(30) + '\\r\\n');
+            sshPromptUser();
+        });
         </script>
     `;
     res.send(renderAdminLayout(req, 'SSH-Konsole', content));
@@ -6227,6 +6250,8 @@ START
                     });
                 } else if (ready && msg.type === 'data' && stream) {
                     stream.write(msg.data);
+                } else if (ready && msg.type === 'resize' && stream) {
+                    stream.setWindow(msg.rows || 24, msg.cols || 80, 0, 0);
                 }
             });
 
