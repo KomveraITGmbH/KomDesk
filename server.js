@@ -3381,10 +3381,10 @@ app.get('/admin', requireAdmin, requirePermission('dashboard.view'), (req, res) 
             modal.className = 'srv-modal-bg';
             modal.innerHTML =
                 '<div class="srv-modal">' +
-                    '<div class="srv-modal-icon">' + (isDeskview ? '↺' : '⏻') + '</div>' +
+                    '<div class="srv-modal-icon">' + (isDeskview ? '\u21BA' : '\u23FB') + '</div>' +
                     '<div class="srv-modal-title">' + (isDeskview ? 'DeskView neu starten?' : 'Linux neu starten?') + '</div>' +
                     '<div class="srv-modal-desc">' + (isDeskview
-                        ? 'Der DeskView-Dienst wird neu gestartet.<br>Du wirst automatisch weitergeleitet sobald er wieder läuft.'
+                        ? 'Der DeskView-Dienst wird neu gestartet.<br>Du wirst automatisch weitergeleitet sobald er wieder l\u00e4uft.'
                         : 'Der gesamte Linux-Server wird neu gestartet.<br>Alle Verbindungen werden getrennt. Dies dauert einige Minuten.') +
                     '</div>' +
                     '<label class="srv-modal-check">' +
@@ -3392,7 +3392,7 @@ app.get('/admin', requireAdmin, requirePermission('dashboard.view'), (req, res) 
                         '<span>' + (isDeskview ? 'Ja, DeskView jetzt neu starten' : 'Ja, Linux-Server jetzt neu starten') + '</span>' +
                     '</label>' +
                     '<div class="srv-modal-btns">' +
-                        '<button class="srv-modal-cancel" onclick="this.closest(\'.srv-modal-bg\').remove()">Abbrechen</button>' +
+                        '<button class="srv-modal-cancel">Abbrechen</button>' +
                         '<button class="srv-modal-confirm" id="srv-confirm-btn" disabled style="background:' + (isDeskview ? '#f59e0b' : '#dc2626') + ';">Neu starten</button>' +
                     '</div>' +
                 '</div>';
@@ -3400,6 +3400,7 @@ app.get('/admin', requireAdmin, requirePermission('dashboard.view'), (req, res) 
             var cb  = modal.querySelector('#srv-confirm-cb');
             var btn = modal.querySelector('#srv-confirm-btn');
             cb.addEventListener('change', function() { btn.disabled = !cb.checked; });
+            modal.querySelector('.srv-modal-cancel').addEventListener('click', function() { modal.remove(); });
             modal.addEventListener('click', function(e) { if (e.target === modal) modal.remove(); });
             btn.addEventListener('click', function() {
                 modal.remove();
