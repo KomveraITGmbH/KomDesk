@@ -3487,7 +3487,6 @@ app.get('/admin', requireAdmin, requirePermission('dashboard.view'), (req, res) 
             if (el) el.textContent = '⏳';
         }
 
-        var _srvTimer = null;
         function srvApply(d) {
             function el(id) { return document.getElementById(id); }
             function set(id, val) { var e = el(id); if (e) e.textContent = val; }
@@ -3520,34 +3519,20 @@ app.get('/admin', requireAdmin, requirePermission('dashboard.view'), (req, res) 
         }
         function srvFetch() {
             fetch('/admin/server/stats', { cache: 'no-store' })
-                .then(function(r) {
-                    if (r.ok) return r.json();
-                    return Promise.reject('HTTP ' + r.status + (r.redirected ? ' (redirect)' : ''));
-                })
-                .then(function(d) {
-                    var logEl = document.getElementById('srv-log');
-                    if (logEl) logEl.style.color = '';
-                    srvApply(d);
-                })
-                .catch(function(reason) {
-                    var msg = (typeof reason === 'string') ? reason : (reason && reason.message ? reason.message : String(reason));
+                .then(function(r) { return r.ok ? r.json() : Promise.reject(r.status); })
+                .then(function(d) { srvApply(d); })
+                .catch(function(status) {
                     var banner = document.getElementById('srv-error-banner');
-                    if (banner) { banner.style.display = 'block'; banner.textContent = 'Stats-Fehler: ' + msg + ' – Seite neu laden oder neu anmelden.'; }
-                    var logEl = document.getElementById('srv-log');
-                    if (logEl) { logEl.textContent = 'Fehler: ' + msg; logEl.style.color = '#dc2626'; }
+                    if (banner) {
+                        banner.style.display = 'block';
+                        banner.textContent = status === 403
+                            ? 'Keine Berechtigung (server.view fehlt)'
+                            : 'Stats konnten nicht geladen werden (HTTP ' + status + ') – bitte Seite neu laden.';
+                    }
                 });
         }
-        function srvStartPolling() {
-            if (_srvTimer) return;
-            srvFetch();
-            _srvTimer = setInterval(srvFetch, 10000);
-        }
-        function srvStopPolling() {
-            if (_srvTimer) { clearInterval(_srvTimer); _srvTimer = null; }
-        }
 
-        function _srvInit() {
-            if (_srvTimer) return;
+        document.addEventListener('DOMContentLoaded', function() {
             document.querySelectorAll('.term-live-row').forEach(function(row) {
                 var tid = row.getAttribute('data-tid');
                 if (!tid) return;
@@ -3556,15 +3541,7 @@ app.get('/admin', requireAdmin, requirePermission('dashboard.view'), (req, res) 
                 if (_tsTimers[tid]) clearInterval(_tsTimers[tid]);
                 _tsTimers[tid] = setInterval(function() { fetchTerminalStatus(tid, row); }, ms);
             });
-            var logEl = document.getElementById('srv-log');
-            if (logEl) { logEl.textContent = 'Laden...'; logEl.style.color = ''; }
-            srvStartPolling();
-        }
-        _srvInit();
-        document.addEventListener('DOMContentLoaded', _srvInit);
-
-        document.addEventListener('visibilitychange', function() {
-            if (document.hidden) { srvStopPolling(); } else { srvStartPolling(); }
+            srvFetch();
         });
         </script>
     `;
