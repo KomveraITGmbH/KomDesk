@@ -93,9 +93,7 @@ const app = express();
 const PORT = 3000;
 const BCRYPT_ROUNDS = 12;
 
-if (process.env.HTTPS_ENABLED === 'true') {
-    app.set('trust proxy', 1);
-}
+app.set('trust proxy', 1);
 
 
 const httpsEnabled = process.env.HTTPS_ENABLED === 'true';
