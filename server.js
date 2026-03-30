@@ -233,8 +233,13 @@ const PERMISSION_GROUPS = [
             },
             {
                 key: 'server.restart',
-                label: 'Server neu starten',
-                description: 'Darf den DeskView-Server-Prozess neu starten.'
+                label: 'DeskView neu starten',
+                description: 'Darf den DeskView-Dienst (komvera-deskview) neu starten.'
+            },
+            {
+                key: 'server.reboot',
+                label: 'Linux neu starten',
+                description: 'Darf den gesamten Linux-Server (sudo reboot) neu starten.'
             }
         ]
     },
@@ -3170,13 +3175,10 @@ app.get('/admin', requireAdmin, requirePermission('dashboard.view'), (req, res) 
         <div class="card db-hero" style="grid-column:1/-1;">
             <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:20px;flex-wrap:wrap;gap:10px;">
                 <div class="db-card-title" style="margin:0;">⚙️ DeskView Server</div>
-                <div style="display:flex;gap:8px;flex-wrap:wrap;">
+                <div style="display:flex;gap:8px;flex-wrap:wrap;" data-csrf="${getCsrfToken(req)}">
                     <button onclick="srvFetchStatus()" style="padding:6px 14px;border:1.5px solid var(--border);border-radius:8px;background:transparent;color:var(--text);font-size:12px;font-weight:600;cursor:pointer;">📋 systemctl status</button>
-                    ${hasPermission(req, 'server.restart') ? `
-                    <form method="POST" action="/admin/server/restart" onsubmit="return confirm('Server komvera-deskview wirklich neu starten?');" style="margin:0;">
-                        ${csrfField(req)}
-                        <button type="submit" style="padding:6px 14px;border:1.5px solid #dc2626;border-radius:8px;background:transparent;color:#dc2626;font-size:12px;font-weight:600;cursor:pointer;">↺ Neu starten</button>
-                    </form>` : ''}
+                    ${hasPermission(req, 'server.restart') ? `<button onclick="srvConfirmRestart('deskview')" style="padding:6px 14px;border:1.5px solid #f59e0b;border-radius:8px;background:transparent;color:#f59e0b;font-size:12px;font-weight:600;cursor:pointer;">↺ DeskView neu starten</button>` : ''}
+                    ${hasPermission(req, 'server.reboot') ? `<button onclick="srvConfirmRestart('linux')" style="padding:6px 14px;border:1.5px solid #dc2626;border-radius:8px;background:transparent;color:#dc2626;font-size:12px;font-weight:600;cursor:pointer;">⏻ Linux neu starten</button>` : ''}
                 </div>
             </div>
             <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:16px;">
@@ -3269,6 +3271,30 @@ app.get('/admin', requireAdmin, requirePermission('dashboard.view'), (req, res) 
             ${adminsHtml}
             ${serverHtml}
         </div>
+        <style>
+        .srv-modal-bg { position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:9000;display:flex;align-items:center;justify-content:center;padding:16px;backdrop-filter:blur(3px); }
+        .srv-modal { background:var(--card-bg);border:1px solid var(--border);border-radius:20px;padding:32px;max-width:420px;width:100%;box-shadow:0 24px 60px rgba(0,0,0,.25);animation:srvModalIn .18s ease; }
+        @keyframes srvModalIn { from{opacity:0;transform:scale(.95)} to{opacity:1;transform:scale(1)} }
+        .srv-modal-icon { font-size:40px;text-align:center;margin-bottom:14px; }
+        .srv-modal-title { font-size:20px;font-weight:700;text-align:center;margin-bottom:8px; }
+        .srv-modal-desc { font-size:14px;opacity:.6;text-align:center;margin-bottom:22px;line-height:1.5; }
+        .srv-modal-check { display:flex;align-items:center;gap:10px;padding:12px 16px;border:1.5px solid var(--border);border-radius:12px;cursor:pointer;margin-bottom:20px;transition:border-color .15s; }
+        .srv-modal-check:hover { border-color:var(--primary); }
+        .srv-modal-check input { width:18px;height:18px;cursor:pointer;accent-color:var(--primary);flex-shrink:0; }
+        .srv-modal-check span { font-size:14px;font-weight:500; }
+        .srv-modal-btns { display:flex;gap:10px; }
+        .srv-modal-btns button { flex:1;padding:12px;border-radius:10px;font-size:14px;font-weight:600;cursor:pointer;border:none;transition:opacity .15s; }
+        .srv-modal-cancel { background:var(--border);color:var(--text); }
+        .srv-modal-confirm { color:#fff; }
+        .srv-modal-confirm:disabled { opacity:.35;cursor:not-allowed; }
+        .srv-overlay { position:fixed;inset:0;background:rgba(0,0,0,.7);z-index:9999;display:flex;align-items:center;justify-content:center;backdrop-filter:blur(4px); }
+        .srv-overlay-box { background:var(--card-bg);border-radius:20px;padding:36px 40px;max-width:380px;width:100%;text-align:center;box-shadow:0 24px 60px rgba(0,0,0,.3); }
+        .srv-spinner { width:48px;height:48px;border:4px solid var(--border);border-top-color:var(--primary);border-radius:50%;animation:srvSpin .8s linear infinite;margin:0 auto 20px; }
+        @keyframes srvSpin { to{transform:rotate(360deg)} }
+        .srv-step { display:flex;align-items:center;gap:10px;font-size:14px;padding:8px 0;border-bottom:1px solid var(--border); }
+        .srv-step:last-child { border-bottom:none; }
+        .srv-step-icon { width:22px;text-align:center;flex-shrink:0; }
+        </style>
         <script>
         // ---- Terminal-Status ----
         var _tsTimers = {};
@@ -3295,33 +3321,25 @@ app.get('/admin', requireAdmin, requirePermission('dashboard.view'), (req, res) 
             if (h>0) return h+'h '+m+'m '+sc+'s';
             return m+'m '+sc+'s';
         }
-        function fmtLog(logs) {
-            return logs.map(function(l) {
-                var t = new Date(l.t).toLocaleTimeString('de-DE');
-                var c = l.level==='error' ? '\\x1b[31m' : l.level==='warn' ? '\\x1b[33m' : '';
-                var pfx = '['+t+'] ['+l.level.toUpperCase()+'] ';
-                return pfx + l.msg;
-            }).join('\\n');
-        }
         function srvFetch() {
             fetch('/admin/server/stats')
                 .then(function(r){ return r.json(); })
                 .then(function(d) {
-                    var cpuEl = document.getElementById('srv-cpu');
+                    var cpuEl  = document.getElementById('srv-cpu');
                     var cpuBar = document.getElementById('srv-cpu-bar');
-                    var ramEl = document.getElementById('srv-ram');
+                    var ramEl  = document.getElementById('srv-ram');
                     var ramBar = document.getElementById('srv-ram-bar');
                     var ramDet = document.getElementById('srv-ram-detail');
-                    var upEl  = document.getElementById('srv-uptime');
-                    var heapEl= document.getElementById('srv-heap');
-                    var rssEl = document.getElementById('srv-rss');
-                    var nodeEl= document.getElementById('srv-node');
-                    var hostEl= document.getElementById('srv-host');
-                    var logEl = document.getElementById('srv-log');
-                    var ageEl = document.getElementById('srv-log-age');
-                    if (cpuEl)  cpuEl.textContent  = d.cpu + '%';
+                    var upEl   = document.getElementById('srv-uptime');
+                    var heapEl = document.getElementById('srv-heap');
+                    var rssEl  = document.getElementById('srv-rss');
+                    var nodeEl = document.getElementById('srv-node');
+                    var hostEl = document.getElementById('srv-host');
+                    var logEl  = document.getElementById('srv-log');
+                    var ageEl  = document.getElementById('srv-log-age');
+                    if (cpuEl)  cpuEl.textContent = d.cpu + '%';
                     if (cpuBar) { cpuBar.style.width = d.cpu+'%'; cpuBar.style.background = d.cpu>80?'#dc2626':d.cpu>50?'#f59e0b':'#2563eb'; }
-                    if (ramEl)  ramEl.textContent  = d.ramPct + '%';
+                    if (ramEl)  ramEl.textContent = d.ramPct + '%';
                     if (ramBar) { ramBar.style.width = d.ramPct+'%'; ramBar.style.background = d.ramPct>85?'#dc2626':d.ramPct>60?'#f59e0b':'#059669'; }
                     if (ramDet) ramDet.textContent = d.ramUsed + ' MB / ' + d.ramTotal + ' MB';
                     if (upEl)   upEl.textContent   = fmtUptime(d.uptime);
@@ -3352,8 +3370,133 @@ app.get('/admin', requireAdmin, requirePermission('dashboard.view'), (req, res) 
                 .catch(function(){ el.textContent = 'Fehler beim Laden.'; });
         }
 
+        // ---- Restart Modal ----
+        function getCsrf() {
+            var el = document.querySelector('[data-csrf]');
+            return el ? el.getAttribute('data-csrf') : '';
+        }
+        function srvConfirmRestart(type) {
+            var isDeskview = type === 'deskview';
+            var modal = document.createElement('div');
+            modal.className = 'srv-modal-bg';
+            modal.innerHTML =
+                '<div class="srv-modal">' +
+                    '<div class="srv-modal-icon">' + (isDeskview ? '↺' : '⏻') + '</div>' +
+                    '<div class="srv-modal-title">' + (isDeskview ? 'DeskView neu starten?' : 'Linux neu starten?') + '</div>' +
+                    '<div class="srv-modal-desc">' + (isDeskview
+                        ? 'Der DeskView-Dienst wird neu gestartet.<br>Du wirst automatisch weitergeleitet sobald er wieder läuft.'
+                        : 'Der gesamte Linux-Server wird neu gestartet.<br>Alle Verbindungen werden getrennt. Dies dauert einige Minuten.') +
+                    '</div>' +
+                    '<label class="srv-modal-check">' +
+                        '<input type="checkbox" id="srv-confirm-cb">' +
+                        '<span>' + (isDeskview ? 'Ja, DeskView jetzt neu starten' : 'Ja, Linux-Server jetzt neu starten') + '</span>' +
+                    '</label>' +
+                    '<div class="srv-modal-btns">' +
+                        '<button class="srv-modal-cancel" onclick="this.closest(\'.srv-modal-bg\').remove()">Abbrechen</button>' +
+                        '<button class="srv-modal-confirm" id="srv-confirm-btn" disabled style="background:' + (isDeskview ? '#f59e0b' : '#dc2626') + ';">Neu starten</button>' +
+                    '</div>' +
+                '</div>';
+            document.body.appendChild(modal);
+            var cb  = modal.querySelector('#srv-confirm-cb');
+            var btn = modal.querySelector('#srv-confirm-btn');
+            cb.addEventListener('change', function() { btn.disabled = !cb.checked; });
+            modal.addEventListener('click', function(e) { if (e.target === modal) modal.remove(); });
+            btn.addEventListener('click', function() {
+                modal.remove();
+                isDeskview ? srvDoRestart() : srvDoReboot();
+            });
+        }
+
+        function srvDoRestart() {
+            var overlay = srvShowOverlay('DeskView wird neu gestartet…', [
+                { id:'s1', text:'Neustart-Befehl wird gesendet…' },
+                { id:'s2', text:'Warte bis Server stoppt…' },
+                { id:'s3', text:'Warte bis Server wieder läuft…' },
+                { id:'s4', text:'Weiterleitung…' }
+            ]);
+            fetch('/admin/server/restart', { method:'POST', headers:{'Content-Type':'application/x-www-form-urlencoded'}, body:'_csrf='+encodeURIComponent(getCsrf()) })
+                .then(function() {
+                    srvStepDone(overlay, 's1');
+                    srvStepActive(overlay, 's2');
+                    // Warte bis Server nicht mehr erreichbar ist (max 15s)
+                    var gone = false, goneTimer = 0;
+                    function waitGone() {
+                        fetch('/admin/server/stats').then(function() {
+                            goneTimer++;
+                            if (goneTimer < 15) setTimeout(waitGone, 1000);
+                            else startWaitBack(); // Fallback
+                        }).catch(function() {
+                            gone = true;
+                            srvStepDone(overlay, 's2');
+                            srvStepActive(overlay, 's3');
+                            startWaitBack();
+                        });
+                    }
+                    function startWaitBack() {
+                        var tries = 0;
+                        function waitBack() {
+                            fetch('/admin/server/stats').then(function(r) {
+                                if (r.ok) {
+                                    srvStepDone(overlay, 's3');
+                                    srvStepActive(overlay, 's4');
+                                    setTimeout(function() { window.location.href = '/admin'; }, 1200);
+                                } else { retry(); }
+                            }).catch(function() { retry(); });
+                            function retry() { tries++; if(tries < 60) setTimeout(waitBack, 2000); }
+                        }
+                        setTimeout(waitBack, 1500);
+                    }
+                    setTimeout(waitGone, 800);
+                })
+                .catch(function() {
+                    overlay.querySelector('.srv-overlay-box').innerHTML += '<p style="color:#dc2626;margin-top:16px;font-size:13px;">Fehler beim Senden des Befehls.</p>';
+                });
+        }
+
+        function srvDoReboot() {
+            var overlay = srvShowOverlay('Linux-Server wird neu gestartet…', [
+                { id:'r1', text:'Neustart-Befehl wird gesendet…' },
+                { id:'r2', text:'Server fährt herunter…' },
+                { id:'r3', text:'Bitte warte — dauert ca. 1–2 Minuten' }
+            ]);
+            fetch('/admin/server/reboot', { method:'POST', headers:{'Content-Type':'application/x-www-form-urlencoded'}, body:'_csrf='+encodeURIComponent(getCsrf()) })
+                .then(function() {
+                    srvStepDone(overlay, 'r1');
+                    srvStepActive(overlay, 'r2');
+                    setTimeout(function() { srvStepDone(overlay, 'r2'); srvStepActive(overlay, 'r3'); }, 3000);
+                })
+                .catch(function() {
+                    overlay.querySelector('.srv-overlay-box').innerHTML += '<p style="color:#dc2626;margin-top:16px;font-size:13px;">Fehler beim Senden des Befehls.</p>';
+                });
+        }
+
+        function srvShowOverlay(title, steps) {
+            var overlay = document.createElement('div');
+            overlay.className = 'srv-overlay';
+            var stepsHtml = steps.map(function(s) {
+                return '<div class="srv-step" id="ovl-'+s.id+'"><span class="srv-step-icon">⏳</span><span>'+s.text+'</span></div>';
+            }).join('');
+            overlay.innerHTML =
+                '<div class="srv-overlay-box">' +
+                    '<div class="srv-spinner"></div>' +
+                    '<div style="font-size:17px;font-weight:700;margin-bottom:20px;">'+title+'</div>' +
+                    '<div style="text-align:left;">'+stepsHtml+'</div>' +
+                '</div>';
+            document.body.appendChild(overlay);
+            // Ersten Schritt sofort aktiv
+            srvStepActive(overlay, steps[0].id);
+            return overlay;
+        }
+        function srvStepDone(overlay, id) {
+            var el = overlay.querySelector('#ovl-'+id+' .srv-step-icon');
+            if (el) el.textContent = '✅';
+        }
+        function srvStepActive(overlay, id) {
+            var el = overlay.querySelector('#ovl-'+id+' .srv-step-icon');
+            if (el) el.textContent = '⏳';
+        }
+
         document.addEventListener('DOMContentLoaded', function() {
-            // Terminal live-status
             document.querySelectorAll('.term-live-row').forEach(function(row) {
                 var tid = row.getAttribute('data-tid');
                 if (!tid) return;
@@ -3362,7 +3505,6 @@ app.get('/admin', requireAdmin, requirePermission('dashboard.view'), (req, res) 
                 if (_tsTimers[tid]) clearInterval(_tsTimers[tid]);
                 _tsTimers[tid] = setInterval(function() { fetchTerminalStatus(tid, row); }, ms);
             });
-            // Server-Stats alle 5 Sek.
             if (document.getElementById('srv-cpu')) {
                 srvFetch();
                 setInterval(srvFetch, 5000);
@@ -3983,7 +4125,7 @@ app.get('/admin/server/systemctl-status', requireAdmin, requirePermission('serve
 
 app.post('/admin/server/restart', requireAdmin, requirePermission('server.restart'), requireCsrf, (req, res) => {
     const admin = getCurrentAdmin(req);
-    console.log(`[Server] Neustart angefordert von Admin: ${admin?.username || '?'}`);
+    console.log(`[Server] DeskView-Neustart angefordert von Admin: ${admin?.username || '?'}`);
     res.json({ ok: true });
     exec('sudo systemctl restart komvera-deskview', (err) => {
         if (err) {
@@ -3991,6 +4133,13 @@ app.post('/admin/server/restart', requireAdmin, requirePermission('server.restar
             setTimeout(() => process.exit(0), 200);
         }
     });
+});
+
+app.post('/admin/server/reboot', requireAdmin, requirePermission('server.reboot'), requireCsrf, (req, res) => {
+    const admin = getCurrentAdmin(req);
+    console.log(`[Server] Linux-Reboot angefordert von Admin: ${admin?.username || '?'}`);
+    res.json({ ok: true });
+    setTimeout(() => exec('sudo reboot'), 500);
 });
 
 app.post('/admin/save-sleep-schedule', requireAdmin, requirePermission('terminals.edit'), requireCsrf, async (req, res) => {
