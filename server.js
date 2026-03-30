@@ -91,7 +91,7 @@ function getServerStats() {
 }
 
 const app = express();
-const PORT = process.env.HTTPS_ENABLED === 'true' ? 443 : 80;
+const PORT = 3000;
 const BCRYPT_ROUNDS = 12;
 
 app.set('trust proxy', 1);
@@ -6267,15 +6267,6 @@ START
                 process.exit(1);
             }
             mainServer = https.createServer(tlsOptions, app);
-
-            // HTTP → HTTPS Redirect auf Port 80
-            const redirectServer = http.createServer((req, res) => {
-                res.writeHead(301, { Location: `https://${domain}${req.url}` });
-                res.end();
-            });
-            redirectServer.listen(80, '0.0.0.0', () => {
-                console.log(`HTTP → HTTPS Redirect läuft auf Port 80`);
-            });
         } else {
             mainServer = http.createServer(app);
         }

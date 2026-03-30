@@ -102,8 +102,12 @@ if [ "$HTTPS_ENABLED" = true ]; then
     echo "==> Laufenden Service stoppen falls vorhanden..."
     sudo systemctl stop ${SERVICE_NAME} 2>/dev/null || true
 
+    echo "==> Alte Zertifikatskonfiguration bereinigen..."
+    sudo certbot delete --cert-name "$DOMAIN" --non-interactive 2>/dev/null || true
+
     echo "==> SSL-Zertifikat wird beantragt (Port 80)..."
     sudo certbot certonly --standalone \
+        --http-01-port 80 \
         -d "$DOMAIN" \
         --email "$LE_EMAIL" \
         --agree-tos \
@@ -152,12 +156,6 @@ mkdir -p public
 
 echo "==> npm install läuft..."
 npm install --omit=dev
-
-# ──────────────────────────────────────────────
-# Node.js Portberechtigung (80/443 ohne root)
-# ──────────────────────────────────────────────
-echo "==> Node.js Portberechtigung wird gesetzt..."
-sudo setcap cap_net_bind_service=+ep "$(readlink -f "$(which node)")"
 
 # ──────────────────────────────────────────────
 # systemd Service
@@ -242,7 +240,7 @@ if [ "$HTTPS_ENABLED" = true ]; then
     echo "   App erreichbar unter: https://${DOMAIN}"
 else
     SERVER_IP=$(hostname -I | awk '{print $1}')
-    echo "   App erreichbar unter: http://${SERVER_IP}"
+    echo "   App erreichbar unter: http://${SERVER_IP}:3000"
 fi
 
 echo ""
