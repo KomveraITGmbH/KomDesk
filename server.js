@@ -53,18 +53,35 @@ function getServerStats() {
     const total = os.totalmem();
     const free  = os.freemem();
     const used  = total - free;
+    const load  = os.loadavg();
+
+    // IP-Adressen (nur IPv4, kein Loopback)
+    const nets = os.networkInterfaces();
+    const ips  = [];
+    for (const iface of Object.values(nets)) {
+        for (const addr of iface) {
+            if (addr.family === 'IPv4' && !addr.internal) ips.push(addr.address);
+        }
+    }
+
     return {
-        uptime:   Math.floor(process.uptime()),
-        cpu:      _cpuPct,
-        ramPct:   Math.round(used / total * 100),
-        ramUsed:  Math.round(used  / 1024 / 1024),
-        ramTotal: Math.round(total / 1024 / 1024),
-        heapUsed: Math.round(mem.heapUsed  / 1024 / 1024),
-        heapTotal:Math.round(mem.heapTotal / 1024 / 1024),
-        rss:      Math.round(mem.rss       / 1024 / 1024),
-        nodeVer:  process.version,
-        platform: os.platform() + ' ' + os.arch(),
-        hostname: os.hostname(),
+        uptime:      Math.floor(process.uptime()),
+        sysUptime:   Math.floor(os.uptime()),
+        cpu:         _cpuPct,
+        cpuCores:    os.cpus().length,
+        load1:       load[0].toFixed(2),
+        load5:       load[1].toFixed(2),
+        load15:      load[2].toFixed(2),
+        ramPct:      Math.round(used / total * 100),
+        ramUsed:     Math.round(used  / 1024 / 1024),
+        ramTotal:    Math.round(total / 1024 / 1024),
+        heapUsed:    Math.round(mem.heapUsed  / 1024 / 1024),
+        heapTotal:   Math.round(mem.heapTotal / 1024 / 1024),
+        rss:         Math.round(mem.rss       / 1024 / 1024),
+        nodeVer:     process.version,
+        platform:    os.platform() + ' ' + os.arch(),
+        hostname:    os.hostname(),
+        ips:         ips,
     };
 }
 
@@ -3181,37 +3198,46 @@ app.get('/admin', requireAdmin, requirePermission('dashboard.view'), (req, res) 
                     ${hasPermission(req, 'server.reboot') ? `<button onclick="srvConfirmRestart('linux')" style="padding:6px 14px;border:1.5px solid #dc2626;border-radius:8px;background:transparent;color:#dc2626;font-size:12px;font-weight:600;cursor:pointer;">⏻ Linux neu starten</button>` : ''}
                 </div>
             </div>
-            <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:16px;">
+            <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:16px;">
                 <div>
-                    <div style="font-size:12px;font-weight:600;opacity:.45;text-transform:uppercase;letter-spacing:.06em;margin-bottom:10px;">System</div>
+                    <div style="font-size:12px;font-weight:600;opacity:.45;text-transform:uppercase;letter-spacing:.06em;margin-bottom:10px;">CPU &amp; RAM</div>
                     <div style="display:flex;flex-direction:column;gap:7px;">
-                        <div class="db-info-row"><span>CPU Auslastung</span>
+                        <div class="db-info-row"><span>CPU (<span id="srv-cpu-cores">–</span> Kerne)</span>
                             <span style="display:flex;align-items:center;gap:8px;">
-                                <span style="width:80px;height:6px;background:var(--border);border-radius:999px;overflow:hidden;display:inline-block;">
+                                <span style="width:70px;height:6px;background:var(--border);border-radius:999px;overflow:hidden;display:inline-block;">
                                     <span id="srv-cpu-bar" style="display:block;height:100%;width:0%;background:#2563eb;border-radius:999px;transition:width .5s;"></span>
                                 </span>
                                 <span id="srv-cpu" style="font-weight:700;min-width:36px;text-align:right;">–</span>
                             </span>
                         </div>
-                        <div class="db-info-row"><span>RAM Auslastung</span>
+                        <div class="db-info-row"><span>Load avg</span><span id="srv-load" style="font-weight:600;font-size:12px;opacity:.8;">–</span></div>
+                        <div class="db-info-row"><span>RAM</span>
                             <span style="display:flex;align-items:center;gap:8px;">
-                                <span style="width:80px;height:6px;background:var(--border);border-radius:999px;overflow:hidden;display:inline-block;">
+                                <span style="width:70px;height:6px;background:var(--border);border-radius:999px;overflow:hidden;display:inline-block;">
                                     <span id="srv-ram-bar" style="display:block;height:100%;width:0%;background:#059669;border-radius:999px;transition:width .5s;"></span>
                                 </span>
                                 <span id="srv-ram" style="font-weight:700;min-width:36px;text-align:right;">–</span>
                             </span>
                         </div>
                         <div class="db-info-row"><span>RAM gesamt</span><span id="srv-ram-detail" style="font-weight:600;opacity:.7;">–</span></div>
-                        <div class="db-info-row"><span>Host</span><span id="srv-host" style="font-weight:600;opacity:.6;font-size:12px;">–</span></div>
                     </div>
                 </div>
                 <div>
-                    <div style="font-size:12px;font-weight:600;opacity:.45;text-transform:uppercase;letter-spacing:.06em;margin-bottom:10px;">Prozess</div>
+                    <div style="font-size:12px;font-weight:600;opacity:.45;text-transform:uppercase;letter-spacing:.06em;margin-bottom:10px;">System</div>
+                    <div style="display:flex;flex-direction:column;gap:7px;">
+                        <div class="db-info-row"><span>Hostname</span><span id="srv-host" style="font-weight:600;font-size:12px;">–</span></div>
+                        <div class="db-info-row"><span>IP-Adresse(n)</span><span id="srv-ip" style="font-weight:600;font-size:12px;">–</span></div>
+                        <div class="db-info-row"><span>Plattform</span><span id="srv-platform" style="font-weight:600;font-size:12px;opacity:.7;">–</span></div>
+                        <div class="db-info-row"><span>System-Uptime</span><span id="srv-sys-uptime" style="font-weight:600;">–</span></div>
+                    </div>
+                </div>
+                <div>
+                    <div style="font-size:12px;font-weight:600;opacity:.45;text-transform:uppercase;letter-spacing:.06em;margin-bottom:10px;">DeskView Prozess</div>
                     <div style="display:flex;flex-direction:column;gap:7px;">
                         <div class="db-info-row"><span>Laufzeit</span><span id="srv-uptime" style="font-weight:600;">–</span></div>
-                        <div class="db-info-row"><span>Node.js Heap</span><span id="srv-heap" style="font-weight:600;">–</span></div>
+                        <div class="db-info-row"><span>Node.js</span><span id="srv-node" style="font-weight:600;opacity:.7;font-size:12px;">–</span></div>
+                        <div class="db-info-row"><span>Heap</span><span id="srv-heap" style="font-weight:600;">–</span></div>
                         <div class="db-info-row"><span>RSS</span><span id="srv-rss" style="font-weight:600;">–</span></div>
-                        <div class="db-info-row"><span>Node.js</span><span id="srv-node" style="font-weight:600;opacity:.6;">–</span></div>
                     </div>
                 </div>
                 <div style="grid-column:1/-1;">
@@ -3320,43 +3346,6 @@ app.get('/admin', requireAdmin, requirePermission('dashboard.view'), (req, res) 
             if (d>0) return d+'d '+h+'h '+m+'m';
             if (h>0) return h+'h '+m+'m '+sc+'s';
             return m+'m '+sc+'s';
-        }
-        function srvFetch() {
-            fetch('/admin/server/stats')
-                .then(function(r){ return r.ok ? r.json() : Promise.reject(r.status); })
-                .then(function(d) {
-                    var cpuEl  = document.getElementById('srv-cpu');
-                    var cpuBar = document.getElementById('srv-cpu-bar');
-                    var ramEl  = document.getElementById('srv-ram');
-                    var ramBar = document.getElementById('srv-ram-bar');
-                    var ramDet = document.getElementById('srv-ram-detail');
-                    var upEl   = document.getElementById('srv-uptime');
-                    var heapEl = document.getElementById('srv-heap');
-                    var rssEl  = document.getElementById('srv-rss');
-                    var nodeEl = document.getElementById('srv-node');
-                    var hostEl = document.getElementById('srv-host');
-                    var logEl  = document.getElementById('srv-log');
-                    var ageEl  = document.getElementById('srv-log-age');
-                    if (cpuEl)  cpuEl.textContent = d.cpu + '%';
-                    if (cpuBar) { cpuBar.style.width = d.cpu+'%'; cpuBar.style.background = d.cpu>80?'#dc2626':d.cpu>50?'#f59e0b':'#2563eb'; }
-                    if (ramEl)  ramEl.textContent = d.ramPct + '%';
-                    if (ramBar) { ramBar.style.width = d.ramPct+'%'; ramBar.style.background = d.ramPct>85?'#dc2626':d.ramPct>60?'#f59e0b':'#059669'; }
-                    if (ramDet) ramDet.textContent = d.ramUsed + ' MB / ' + d.ramTotal + ' MB';
-                    if (upEl)   upEl.textContent   = fmtUptime(d.uptime);
-                    if (heapEl) heapEl.textContent = d.heapUsed + ' / ' + d.heapTotal + ' MB';
-                    if (rssEl)  rssEl.textContent  = d.rss + ' MB';
-                    if (nodeEl) nodeEl.textContent = d.nodeVer;
-                    if (hostEl) hostEl.textContent = d.hostname + ' (' + d.platform + ')';
-                    if (logEl && d.logs) {
-                        var atBottom = logEl.scrollTop + logEl.clientHeight >= logEl.scrollHeight - 10;
-                        logEl.textContent = d.logs.map(function(l){
-                            return '['+new Date(l.t).toLocaleTimeString('de-DE')+'] ['+l.level.toUpperCase()+'] '+l.msg;
-                        }).join('\\n');
-                        if (atBottom) logEl.scrollTop = logEl.scrollHeight;
-                    }
-                    if (ageEl) ageEl.textContent = 'Aktualisiert ' + new Date().toLocaleTimeString('de-DE');
-                })
-                .catch(function(){});
         }
         function srvFetchStatus() {
             var wrap = document.getElementById('srv-systemctl-wrap');
@@ -3491,6 +3480,53 @@ app.get('/admin', requireAdmin, requirePermission('dashboard.view'), (req, res) 
             if (el) el.textContent = '⏳';
         }
 
+        var _srvSource = null;
+        function srvApply(d) {
+            function el(id) { return document.getElementById(id); }
+            function set(id, val) { var e = el(id); if (e) e.textContent = val; }
+            var cpuBar = el('srv-cpu-bar'), ramBar = el('srv-ram-bar');
+            set('srv-cpu',       d.cpu + '%');
+            set('srv-cpu-cores', d.cpuCores);
+            set('srv-load',      d.load1 + ' / ' + d.load5 + ' / ' + d.load15 + ' (1/5/15 min)');
+            set('srv-ram',       d.ramPct + '%');
+            set('srv-ram-detail',d.ramUsed + ' MB / ' + d.ramTotal + ' MB');
+            set('srv-uptime',    fmtUptime(d.uptime));
+            set('srv-sys-uptime',fmtUptime(d.sysUptime));
+            set('srv-heap',      d.heapUsed + ' / ' + d.heapTotal + ' MB');
+            set('srv-rss',       d.rss + ' MB');
+            set('srv-node',      d.nodeVer);
+            set('srv-host',      d.hostname);
+            set('srv-platform',  d.platform);
+            set('srv-ip',        (d.ips && d.ips.length) ? d.ips.join(', ') : '–');
+            if (cpuBar) { cpuBar.style.width = d.cpu+'%'; cpuBar.style.background = d.cpu>80?'#dc2626':d.cpu>50?'#f59e0b':'#2563eb'; }
+            if (ramBar) { ramBar.style.width = d.ramPct+'%'; ramBar.style.background = d.ramPct>85?'#dc2626':d.ramPct>60?'#f59e0b':'#059669'; }
+            var logEl = el('srv-log');
+            if (logEl && d.logs) {
+                var atBottom = logEl.scrollTop + logEl.clientHeight >= logEl.scrollHeight - 10;
+                logEl.textContent = d.logs.map(function(l){
+                    return '['+new Date(l.t).toLocaleTimeString('de-DE')+'] ['+l.level.toUpperCase()+'] '+l.msg;
+                }).join('\n');
+                if (atBottom) logEl.scrollTop = logEl.scrollHeight;
+            }
+            var ageEl = el('srv-log-age');
+            if (ageEl) ageEl.textContent = new Date().toLocaleTimeString('de-DE');
+        }
+        function srvStartStream() {
+            if (_srvSource) return;
+            _srvSource = new EventSource('/admin/server/stream');
+            _srvSource.onmessage = function(e) {
+                try { srvApply(JSON.parse(e.data)); } catch(err) {}
+            };
+            _srvSource.onerror = function() {
+                _srvSource.close();
+                _srvSource = null;
+                setTimeout(srvStartStream, 10000);
+            };
+        }
+        function srvStopStream() {
+            if (_srvSource) { _srvSource.close(); _srvSource = null; }
+        }
+
         document.addEventListener('DOMContentLoaded', function() {
             document.querySelectorAll('.term-live-row').forEach(function(row) {
                 var tid = row.getAttribute('data-tid');
@@ -3500,8 +3536,11 @@ app.get('/admin', requireAdmin, requirePermission('dashboard.view'), (req, res) 
                 if (_tsTimers[tid]) clearInterval(_tsTimers[tid]);
                 _tsTimers[tid] = setInterval(function() { fetchTerminalStatus(tid, row); }, ms);
             });
-            srvFetch();
-            setInterval(srvFetch, 5000);
+            srvStartStream();
+        });
+
+        document.addEventListener('visibilitychange', function() {
+            if (document.hidden) { srvStopStream(); } else { srvStartStream(); }
         });
         </script>
     `;
@@ -4108,6 +4147,23 @@ app.get('/admin/server/stats', requireAdmin, requirePermission('server.view'), (
         ...getServerStats(),
         logs: _logBuffer.slice(-80).reverse()
     });
+});
+
+app.get('/admin/server/stream', requireAdmin, requirePermission('server.view'), (req, res) => {
+    res.setHeader('Content-Type', 'text/event-stream');
+    res.setHeader('Cache-Control', 'no-cache');
+    res.setHeader('Connection', 'keep-alive');
+    res.setHeader('X-Accel-Buffering', 'no');
+    res.flushHeaders();
+
+    function push() {
+        const data = { ...getServerStats(), logs: _logBuffer.slice(-80).reverse() };
+        res.write('data: ' + JSON.stringify(data) + '\n\n');
+    }
+
+    push();
+    const timer = setInterval(push, 5000);
+    req.on('close', () => clearInterval(timer));
 });
 
 app.get('/admin/server/systemctl-status', requireAdmin, requirePermission('server.view'), (req, res) => {
