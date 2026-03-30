@@ -736,6 +736,7 @@ function renderSidebar(req) {
             </nav>
             <div class="sidebar-footer">
                 <button class="theme-toggle" onclick="toggleTheme()" title="Hell/Dunkel umschalten">&#9790; Modus</button>
+                <button class="theme-toggle" id="devModeBtn" onclick="toggleDevMode()" title="Entwicklermodus" style="margin-top:6px;">&#128736; Dev</button>
             </div>
         </aside>
     `;
@@ -1433,6 +1434,21 @@ function renderAdminLayout(req, title, content) {
                 document.documentElement.setAttribute('data-theme', next);
                 localStorage.setItem('deskview-theme', next);
             }
+
+            window._devMode = localStorage.getItem('deskview-devmode') === '1';
+            function applyDevMode() {
+                var btn = document.getElementById('devModeBtn');
+                if (btn) btn.style.opacity = window._devMode ? '1' : '0.45';
+                document.querySelectorAll('.dev-only').forEach(function(el) {
+                    el.style.display = window._devMode ? '' : 'none';
+                });
+            }
+            function toggleDevMode() {
+                window._devMode = !window._devMode;
+                localStorage.setItem('deskview-devmode', window._devMode ? '1' : '0');
+                applyDevMode();
+            }
+            document.addEventListener('DOMContentLoaded', applyDevMode);
             function toggleVis(id) {
                 var inp = document.getElementById(id);
                 if (!inp) return;
@@ -1509,9 +1525,9 @@ function renderAdminLayout(req, title, content) {
 
             async function saveSleepSchedule(roomId) {
                 var resultEl = document.getElementById('trmnlTestResult_' + roomId);
+                var statusEl = document.getElementById('trmnlSleepStatus_' + roomId);
                 var form = document.getElementById('trmnlSleepForm_' + roomId);
-                resultEl.style.display = 'block';
-                resultEl.textContent = 'Speichere Sleep Schedule...';
+                if (statusEl) { statusEl.style.display = 'block'; statusEl.textContent = 'Speichere...'; statusEl.style.color = ''; }
                 try {
                     var fd = new FormData(form);
                     var r = await fetch('/admin/save-sleep-schedule', {
@@ -1522,9 +1538,17 @@ function renderAdminLayout(req, title, content) {
                     var text = await r.text();
                     var data;
                     try { data = JSON.parse(text); } catch(e) { data = text; }
-                    resultEl.textContent = typeof data === 'string' ? data : JSON.stringify(data, null, 2);
+                    var ok = !data.error && (data.status === 200 || data.status === 204);
+                    if (statusEl) {
+                        statusEl.textContent = ok ? '✅ Sleep Schedule gespeichert' : '❌ Fehler: ' + (data.error || data);
+                        statusEl.style.color = ok ? '#059669' : '#dc2626';
+                    }
+                    if (window._devMode && resultEl) {
+                        resultEl.style.display = 'block';
+                        resultEl.textContent = typeof data === 'string' ? data : JSON.stringify(data, null, 2);
+                    }
                 } catch(e) {
-                    resultEl.textContent = 'Fehler: ' + e.message;
+                    if (statusEl) { statusEl.textContent = '❌ Fehler: ' + e.message; statusEl.style.color = '#dc2626'; }
                 }
             }
 
@@ -1553,8 +1577,7 @@ function renderAdminLayout(req, title, content) {
                     statusEl.innerHTML =
                         '<b>🔋 Akku:</b> ' + battPct + ' (' + battV + ')<br>' +
                         '<b>📶 WLAN:</b> ' + wifi + ' (RSSI: ' + rssi + ')<br>' +
-                        '<b>😴 Schlafmodus:</b> ' + sleep + ' ' + sleepT + '<br>' +
-                        '<b>🔄 Refresh Rate:</b> ' + (d.refresh_rate ? d.refresh_rate + ' s' : '–');
+                        '<b>😴 Schlafmodus:</b> ' + sleep + ' ' + sleepT;
                 } catch(e) {
                     statusEl.innerHTML = 'Fehler: ' + e.message;
                 }
@@ -3324,7 +3347,7 @@ app.get('/admin/rooms', requireAdmin, requirePermission('rooms.view'), (req, res
                             <select name="trmnlMode" id="trmnlMode_${escapeHtml(room.id)}" onchange="trmnlModeChange('${escapeHtml(room.id)}')" style="margin-bottom:12px;">
                                 <option value="none"    ${(room.trmnlMode||'none')==='none'    ? 'selected' : ''}>Kein TRMNL</option>
                                 <option value="polling" ${(room.trmnlMode||'none')==='polling' ? 'selected' : ''}>Polling (TRMNL zieht Daten selbst)</option>
-                                <option value="webhook" ${(room.trmnlMode||'none')==='webhook' ? 'selected' : ''}>Webhook / Push (sofortige Aktualisierung)</option>
+                                <option value="webhook" ${(room.trmnlMode||'none')==='webhook' ? 'selected' : ''}>Webhook / Push</option>
                             </select>
 
                             <div id="trmnl_polling_${escapeHtml(room.id)}" style="display:${(room.trmnlMode||'none')==='polling' ? 'block' : 'none'}">
@@ -3332,7 +3355,7 @@ app.get('/admin/rooms', requireAdmin, requirePermission('rooms.view'), (req, res
                             </div>
 
                             <div id="trmnl_webhook_${escapeHtml(room.id)}" style="display:${(room.trmnlMode||'none')==='webhook' ? 'block' : 'none'}">
-                                <p style="font-size:13px;opacity:.7;margin-bottom:8px;">Bei jeder Änderung werden die Daten sofort an TRMNL gesendet.</p>
+                                <p style="font-size:13px;opacity:.7;margin-bottom:8px;">Bei jeder Änderung werden die Daten an TRMNL gesendet. Das Gerät zeigt die Änderung beim nächsten Poll-Zyklus an.</p>
 
                                 <label>Webhook URL <span style="font-weight:400;opacity:.6;">(aus TRMNL Plugin → Webhook-Strategie)</span></label>
                                 <input type="text" name="trmnlWebhookUrl" value="${escapeHtml(room.trmnlWebhookUrl || '')}" placeholder="https://usetrmnl.com/api/custom_plugins/...">
@@ -3352,7 +3375,7 @@ app.get('/admin/rooms', requireAdmin, requirePermission('rooms.view'), (req, res
                         </form>
 
                         <div style="display:flex;gap:8px;margin-top:8px;flex-wrap:wrap;">
-                            <form id="trmnlTestForm_${escapeHtml(room.id)}" style="margin:0;">
+                            <form id="trmnlTestForm_${escapeHtml(room.id)}" class="dev-only" style="margin:0;">
                                 <input type="hidden" name="_csrf" value="${getCsrfToken(req)}">
                                 <input type="hidden" name="roomId" value="${escapeHtml(room.id)}">
                                 <button type="button" onclick="testTrmnlPush('${escapeHtml(room.id)}')" style="background:#6b7280;">TRMNL Push testen</button>
@@ -3380,11 +3403,12 @@ app.get('/admin/rooms', requireAdmin, requirePermission('rooms.view'), (req, res
                                     </div>
                                 </div>
                                 <button type="button" onclick="saveSleepSchedule('${escapeHtml(room.id)}')" style="background:#059669;">Sleep Schedule speichern</button>
+                                <span id="trmnlSleepStatus_${escapeHtml(room.id)}" style="display:none;font-size:13px;margin-left:10px;"></span>
                             </form>
                         </div>
                         <div id="trmnlDeviceStatus_${escapeHtml(room.id)}" style="display:none;margin-top:10px;background:#1e1e2e;color:#cdd6f4;padding:12px;border-radius:8px;font-size:13px;line-height:1.8;">
                         </div>
-                        <pre id="trmnlTestResult_${escapeHtml(room.id)}" style="display:none;margin-top:8px;background:#111;color:#0f0;padding:10px;border-radius:6px;font-size:12px;overflow:auto;max-height:200px;"></pre>
+                        <pre id="trmnlTestResult_${escapeHtml(room.id)}" class="dev-only" style="display:none;margin-top:8px;background:#111;color:#0f0;padding:10px;border-radius:6px;font-size:12px;overflow:auto;max-height:200px;"></pre>
                         `
                         : `
                         <p><strong>Abteilung:</strong> ${escapeHtml(room.abteilung)}</p>
