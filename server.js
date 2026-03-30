@@ -3480,7 +3480,7 @@ app.get('/admin', requireAdmin, requirePermission('dashboard.view'), (req, res) 
             if (el) el.textContent = '⏳';
         }
 
-        var _srvSource = null;
+        var _srvTimer = null;
         function srvApply(d) {
             function el(id) { return document.getElementById(id); }
             function set(id, val) { var e = el(id); if (e) e.textContent = val; }
@@ -3511,20 +3511,19 @@ app.get('/admin', requireAdmin, requirePermission('dashboard.view'), (req, res) 
             var ageEl = el('srv-log-age');
             if (ageEl) ageEl.textContent = new Date().toLocaleTimeString('de-DE');
         }
-        function srvStartStream() {
-            if (_srvSource) return;
-            _srvSource = new EventSource('/admin/server/stream');
-            _srvSource.onmessage = function(e) {
-                try { srvApply(JSON.parse(e.data)); } catch(err) {}
-            };
-            _srvSource.onerror = function() {
-                _srvSource.close();
-                _srvSource = null;
-                setTimeout(srvStartStream, 10000);
-            };
+        function srvFetch() {
+            fetch('/admin/server/stats', { cache: 'no-store' })
+                .then(function(r) { return r.ok ? r.json() : Promise.reject(); })
+                .then(function(d) { srvApply(d); })
+                .catch(function() {});
         }
-        function srvStopStream() {
-            if (_srvSource) { _srvSource.close(); _srvSource = null; }
+        function srvStartPolling() {
+            if (_srvTimer) return;
+            srvFetch();
+            _srvTimer = setInterval(srvFetch, 10000);
+        }
+        function srvStopPolling() {
+            if (_srvTimer) { clearInterval(_srvTimer); _srvTimer = null; }
         }
 
         document.addEventListener('DOMContentLoaded', function() {
@@ -3536,11 +3535,11 @@ app.get('/admin', requireAdmin, requirePermission('dashboard.view'), (req, res) 
                 if (_tsTimers[tid]) clearInterval(_tsTimers[tid]);
                 _tsTimers[tid] = setInterval(function() { fetchTerminalStatus(tid, row); }, ms);
             });
-            srvStartStream();
+            srvStartPolling();
         });
 
         document.addEventListener('visibilitychange', function() {
-            if (document.hidden) { srvStopStream(); } else { srvStartStream(); }
+            if (document.hidden) { srvStopPolling(); } else { srvStartPolling(); }
         });
         </script>
     `;
@@ -4149,22 +4148,6 @@ app.get('/admin/server/stats', requireAdmin, requirePermission('server.view'), (
     });
 });
 
-app.get('/admin/server/stream', requireAdmin, requirePermission('server.view'), (req, res) => {
-    res.setHeader('Content-Type', 'text/event-stream');
-    res.setHeader('Cache-Control', 'no-cache');
-    res.setHeader('Connection', 'keep-alive');
-    res.setHeader('X-Accel-Buffering', 'no');
-    res.flushHeaders();
-
-    function push() {
-        const data = { ...getServerStats(), logs: _logBuffer.slice(-80).reverse() };
-        res.write('data: ' + JSON.stringify(data) + '\n\n');
-    }
-
-    push();
-    const timer = setInterval(push, 5000);
-    req.on('close', () => clearInterval(timer));
-});
 
 app.get('/admin/server/systemctl-status', requireAdmin, requirePermission('server.view'), (req, res) => {
     exec('sudo systemctl status komvera-deskview --no-pager -l', { timeout: 5000 }, (err, stdout, stderr) => {
