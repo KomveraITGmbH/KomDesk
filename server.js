@@ -1528,6 +1528,45 @@ function renderAdminLayout(req, title, content) {
                 }
             }
 
+            async function loadDeviceStatus(roomId) {
+                var statusEl = document.getElementById('trmnlDeviceStatus_' + roomId);
+                var form = document.getElementById('trmnlStatusForm_' + roomId);
+                statusEl.style.display = 'block';
+                statusEl.innerHTML = 'Lade Gerätestatus...';
+                try {
+                    var fd = new FormData(form);
+                    var r = await fetch('/admin/device-status', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                        body: new URLSearchParams(fd).toString()
+                    });
+                    var data;
+                    try { data = JSON.parse(await r.text()); } catch(e) { statusEl.innerHTML = 'Fehler beim Parsen'; return; }
+                    if (data.error) { statusEl.innerHTML = '❌ ' + data.error; return; }
+                    var d = data.device;
+                    var battPct = d.percent_charged != null ? Math.round(d.percent_charged) + '%' : '–';
+                    var battV   = d.battery_voltage != null ? d.battery_voltage.toFixed(2) + ' V' : '–';
+                    var rssi    = d.rssi != null ? d.rssi + ' dBm' : '–';
+                    var wifi    = d.wifi_strength != null ? d.wifi_strength + '%' : '–';
+                    var sleep   = d.sleep_mode_enabled ? '✅ An' : '❌ Aus';
+                    var sleepT  = d.sleep_mode_enabled ? (minutesToTime(d.sleep_start_time) + ' – ' + minutesToTime(d.sleep_end_time)) : '–';
+                    statusEl.innerHTML =
+                        '<b>🔋 Akku:</b> ' + battPct + ' (' + battV + ')<br>' +
+                        '<b>📶 WLAN:</b> ' + wifi + ' (RSSI: ' + rssi + ')<br>' +
+                        '<b>😴 Schlafmodus:</b> ' + sleep + ' ' + sleepT + '<br>' +
+                        '<b>🔄 Refresh Rate:</b> ' + (d.refresh_rate ? d.refresh_rate + ' s' : '–');
+                } catch(e) {
+                    statusEl.innerHTML = 'Fehler: ' + e.message;
+                }
+            }
+
+            function minutesToTime(min) {
+                if (min == null) return '–';
+                var h = String(Math.floor(min / 60)).padStart(2, '0');
+                var m = String(min % 60).padStart(2, '0');
+                return h + ':' + m;
+            }
+
             async function testTrmnlPush(roomId) {
                 var resultEl = document.getElementById('trmnlTestResult_' + roomId);
                 var form = document.getElementById('trmnlTestForm_' + roomId);
@@ -3306,22 +3345,8 @@ app.get('/admin/rooms', requireAdmin, requirePermission('rooms.view'), (req, res
                             <label>TRMNL Account API Key <span style="font-weight:400;opacity:.6;">(Account → Settings → API Key)</span></label>
                             <input type="text" name="trmnlDeviceApiKey" value="${escapeHtml(room.trmnlDeviceApiKey || '')}" placeholder="Account API Key aus TRMNL Settings">
 
-                            <label>TRMNL Device API Key <span style="font-weight:400;opacity:.6;">(Gerät → Settings → API Key)</span></label>
-                            <input type="text" name="trmnlDeviceAccessToken" value="${escapeHtml(room.trmnlDeviceAccessToken || '')}" placeholder="Device Access Token aus TRMNL">
-
                             <label>Device MAC-Adresse</label>
                             <input type="text" name="trmnlDeviceMac" value="${escapeHtml(room.trmnlDeviceMac || '')}" placeholder="z. B. 08:92:72:65:F8:9C">
-
-                            <div style="display:flex;gap:16px;margin-top:4px;">
-                                <div style="flex:1;">
-                                    <label>Aktiv ab (Morgens)</label>
-                                    <input type="time" name="trmnlSleepEnd" value="${escapeHtml(room.trmnlSleepEnd || '07:00')}">
-                                </div>
-                                <div style="flex:1;">
-                                    <label>Schlafen ab (Abends)</label>
-                                    <input type="time" name="trmnlSleepStart" value="${escapeHtml(room.trmnlSleepStart || '19:00')}">
-                                </div>
-                            </div>
 
                             <button type="submit">Raum speichern</button>
                         </form>
@@ -3332,11 +3357,32 @@ app.get('/admin/rooms', requireAdmin, requirePermission('rooms.view'), (req, res
                                 <input type="hidden" name="roomId" value="${escapeHtml(room.id)}">
                                 <button type="button" onclick="testTrmnlPush('${escapeHtml(room.id)}')" style="background:#6b7280;">TRMNL Push testen</button>
                             </form>
+                            <form id="trmnlStatusForm_${escapeHtml(room.id)}" style="margin:0;">
+                                <input type="hidden" name="_csrf" value="${getCsrfToken(req)}">
+                                <input type="hidden" name="roomId" value="${escapeHtml(room.id)}">
+                                <button type="button" onclick="loadDeviceStatus('${escapeHtml(room.id)}')" style="background:#6366f1;">Gerätestatus anzeigen</button>
+                            </form>
+                        </div>
+
+                        <div style="margin-top:16px;padding:14px;border:1px solid var(--border);border-radius:8px;">
+                            <h4 style="margin:0 0 10px 0;font-size:14px;">😴 Sleep Schedule</h4>
                             <form id="trmnlSleepForm_${escapeHtml(room.id)}" style="margin:0;">
                                 <input type="hidden" name="_csrf" value="${getCsrfToken(req)}">
                                 <input type="hidden" name="roomId" value="${escapeHtml(room.id)}">
+                                <div style="display:flex;gap:16px;margin-bottom:10px;">
+                                    <div style="flex:1;">
+                                        <label style="font-size:13px;">Aktiv ab (Morgens)</label>
+                                        <input type="time" name="trmnlSleepEnd" value="${escapeHtml(room.trmnlSleepEnd || '07:00')}">
+                                    </div>
+                                    <div style="flex:1;">
+                                        <label style="font-size:13px;">Schlafen ab (Abends)</label>
+                                        <input type="time" name="trmnlSleepStart" value="${escapeHtml(room.trmnlSleepStart || '19:00')}">
+                                    </div>
+                                </div>
                                 <button type="button" onclick="saveSleepSchedule('${escapeHtml(room.id)}')" style="background:#059669;">Sleep Schedule speichern</button>
                             </form>
+                        </div>
+                        <div id="trmnlDeviceStatus_${escapeHtml(room.id)}" style="display:none;margin-top:10px;background:#1e1e2e;color:#cdd6f4;padding:12px;border-radius:8px;font-size:13px;line-height:1.8;">
                         </div>
                         <pre id="trmnlTestResult_${escapeHtml(room.id)}" style="display:none;margin-top:8px;background:#111;color:#0f0;padding:10px;border-radius:6px;font-size:12px;overflow:auto;max-height:200px;"></pre>
                         `
@@ -3491,10 +3537,8 @@ app.post('/admin/update-room', requireAdmin, requirePermission('rooms.edit'), re
         room.trmnlMode = ['none','polling','webhook'].includes(req.body.trmnlMode) ? req.body.trmnlMode : 'none';
         room.trmnlWebhookUrl = String(req.body.trmnlWebhookUrl || '').trim();
         room.trmnlDeviceApiKey = String(req.body.trmnlDeviceApiKey || '').trim();
-        room.trmnlDeviceAccessToken = String(req.body.trmnlDeviceAccessToken || '').trim();
         room.trmnlDeviceMac = String(req.body.trmnlDeviceMac || '').trim();
-        room.trmnlSleepStart = String(req.body.trmnlSleepStart || '').trim();
-        room.trmnlSleepEnd = String(req.body.trmnlSleepEnd || '').trim();
+        // trmnlSleepStart/End werden über Sleep Schedule Form gespeichert
 
 
         saveRooms();
@@ -3533,6 +3577,30 @@ app.post('/admin/test-trmnl-push', requireAdmin, requirePermission('rooms.edit')
     return res.json({ results, payload });
 });
 
+app.post('/admin/device-status', requireAdmin, requirePermission('rooms.edit'), requireCsrf, async (req, res) => {
+    const roomId = String(req.body.roomId || '').trim();
+    const room = getRoom(roomId);
+    if (!room) return res.status(404).json({ error: 'Raum nicht gefunden' });
+    if (!room.trmnlDeviceApiKey || !room.trmnlDeviceMac) return res.status(400).json({ error: 'Account API Key und MAC-Adresse fehlen' });
+
+    try {
+        const headers = { 'Authorization': `Bearer ${room.trmnlDeviceApiKey}`, 'Content-Type': 'application/json' };
+        const listRes = await fetch('https://usetrmnl.com/api/devices', { headers });
+        if (!listRes.ok) return res.json({ error: `TRMNL Fehler: ${listRes.status}` });
+
+        const list = await listRes.json();
+        const devices = list.data || list.devices || list;
+        const device = Array.isArray(devices)
+            ? devices.find(d => (d.mac_address || '').toUpperCase() === room.trmnlDeviceMac.toUpperCase())
+            : null;
+
+        if (!device) return res.json({ error: `Gerät mit MAC ${room.trmnlDeviceMac} nicht gefunden` });
+        return res.json({ device });
+    } catch (err) {
+        return res.json({ error: err.message });
+    }
+});
+
 app.post('/admin/save-sleep-schedule', requireAdmin, requirePermission('rooms.edit'), requireCsrf, async (req, res) => {
     const roomId = String(req.body.roomId || '').trim();
     const room = getRoom(roomId);
@@ -3561,10 +3629,13 @@ app.post('/admin/save-sleep-schedule', requireAdmin, requirePermission('rooms.ed
 
         if (!device) return res.json({ error: `Gerät mit MAC ${room.trmnlDeviceMac} nicht gefunden`, all_devices: Array.isArray(devices) ? devices.map(d => d.mac_address) : devices });
 
-        // Zeiten HH:MM → Minuten seit Mitternacht
+        // Zeiten direkt aus Request lesen und in Room speichern
         const toMinutes = t => { const [h, m] = (t || '00:00').split(':').map(Number); return h * 60 + m; };
-        const sleepStart = room.trmnlSleepStart || '19:00';
-        const sleepEnd   = room.trmnlSleepEnd   || '07:00';
+        const sleepStart = String(req.body.trmnlSleepStart || room.trmnlSleepStart || '19:00').trim();
+        const sleepEnd   = String(req.body.trmnlSleepEnd   || room.trmnlSleepEnd   || '07:00').trim();
+        room.trmnlSleepStart = sleepStart;
+        room.trmnlSleepEnd   = sleepEnd;
+        saveRooms();
 
         const patchBody = {
             device: {
