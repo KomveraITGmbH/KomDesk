@@ -96,19 +96,25 @@ sudo ufw --force enable
 # ──────────────────────────────────────────────
 if [ "$HTTPS_ENABLED" = true ]; then
     echo ""
-    echo "==> Certbot wird installiert..."
-    sudo apt-get install -y certbot
+    echo "==> Apache + Certbot werden installiert..."
+    sudo apt-get install -y apache2 certbot python3-certbot-apache
+
+    echo "==> Apache wird gestartet..."
+    sudo systemctl start apache2
 
     echo "==> Alte Zertifikatskonfiguration bereinigen..."
     sudo certbot delete --cert-name "$DOMAIN" --non-interactive 2>/dev/null || true
 
-    echo "==> SSL-Zertifikat wird beantragt (Port 80)..."
-    sudo certbot certonly --standalone \
-        --http-01-port 80 \
+    echo "==> SSL-Zertifikat wird beantragt (via Apache)..."
+    sudo certbot certonly --apache \
         -d "$DOMAIN" \
         --email "$LE_EMAIL" \
         --agree-tos \
         --non-interactive
+
+    echo "==> Apache wird gestoppt und deaktiviert..."
+    sudo systemctl stop apache2
+    sudo systemctl disable apache2
 
     echo ""
     echo "✅ Zertifikat erhalten: /etc/letsencrypt/live/${DOMAIN}/"
