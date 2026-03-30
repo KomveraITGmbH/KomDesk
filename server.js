@@ -1,6 +1,7 @@
 const express = require('express');
 const cors = require('cors');
 const session = require('express-session');
+const FileStore = require('session-file-store')(session);
 const { ConfidentialClientApplication } = require('@azure/msal-node');
 const fs = require('fs');
 const path = require('path');
@@ -1803,9 +1804,10 @@ const bootstrapSessionSecret = generateStrongSecret();
 
 function buildSessionMiddleware() {
     return session({
+        store: new FileStore({ path: path.join(DATA_DIR, 'sessions'), ttl: 86400, retries: 0, logFn: function(){} }),
         secret: String(appConfig.sessionSecret || '').trim() || bootstrapSessionSecret,
         resave: false,
-        saveUninitialized: true,
+        saveUninitialized: false,
         cookie: {
             httpOnly: true,
             sameSite: 'lax',
