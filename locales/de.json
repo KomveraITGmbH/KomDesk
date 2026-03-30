@@ -354,6 +354,8 @@
     "sleepSchedule": "😴 Sleep Schedule",
     "activeFrom": "Aktiv ab (Morgens)",
     "sleepFrom": "Schlafen ab (Abends)",
-    "saveSleepSchedule": "Sleep Schedule speichern"
+    "saveSleepSchedule": "Sleep Schedule speichern",
+    "assigned": "Zugewiesen: ",
+    "noRoomAssigned": "Keinem Raum zugewiesen"
   }
 }

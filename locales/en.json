@@ -354,6 +354,8 @@
     "sleepSchedule": "😴 Sleep Schedule",
     "activeFrom": "Active from (Morning)",
     "sleepFrom": "Sleep from (Evening)",
-    "saveSleepSchedule": "Save Sleep Schedule"
+    "saveSleepSchedule": "Save Sleep Schedule",
+    "assigned": "Assigned: ",
+    "noRoomAssigned": "Not assigned to any room"
   }
 }

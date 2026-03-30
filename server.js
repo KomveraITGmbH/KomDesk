@@ -3466,6 +3466,7 @@ MEIN KONTO
 ==================================================
 */
 app.get('/admin/account', requireAdmin, (req, res) => {
+    const L = loadLocale();
     const admin = getCurrentAdmin(req);
     const accError = String(req.query.error || '');
     const accField = String(req.query.field || '');
@@ -3563,6 +3564,7 @@ SYSTEM
 ==================================================
 */
 app.get('/admin/system', requireAdmin, requirePermission('system.settings'), (req, res) => {
+    const L = loadLocale();
     const content = `
         <div class="topbar">
             <h1 class="page-title" data-i18n="system.title">System</h1>
@@ -3711,6 +3713,7 @@ LOGO
 app.get('/admin/logo', requireAdmin, requirePermission('system.logo'), (req, res) => {
     const logoExists = fs.existsSync(LOGO_FILE);
 
+    const L = loadLocale();
     const content = `
         <div class="topbar">
             <h1 class="page-title" data-i18n="logo.title">Logo verwalten</h1>
@@ -3813,6 +3816,7 @@ RÄUME
 ==================================================
 */
 app.get('/admin/rooms', requireAdmin, requirePermission('rooms.view'), (req, res) => {
+    const L = loadLocale();
     const roomCards = Object.values(rooms).map((room) => {
         const seatRows = room.seats.map((seat, index) => `
             <tr>
@@ -4432,16 +4436,18 @@ app.post('/admin/save-sleep-schedule', requireAdmin, requirePermission('terminal
 /*
 ==================================================
 TERMINALS ADMIN
+    const L = loadLocale();
 ==================================================
 */
 app.get('/admin/terminals', requireAdmin, requirePermission('terminals.view'), (req, res) => {
+    const L = loadLocale();
     const terminalList = Object.values(terminals);
 
     const cards = terminalList.map(t => {
         const assignedRooms = Object.values(rooms).filter(r => r.terminalId === t.id);
         const assignedText = assignedRooms.length > 0
-            ? 'Zugewiesen: ' + assignedRooms.map(r => escapeHtml(r.abteilung)).join(', ')
-            : 'Keinem Raum zugewiesen';
+            ? L.terminals.assigned + assignedRooms.map(r => escapeHtml(r.abteilung)).join(', ')
+            : L.terminals.noRoomAssigned;
 
         const modeColor = t.trmnlMode === 'webhook' ? '#059669' : t.trmnlMode === 'polling' ? '#6366f1' : '#6b7280';
 
