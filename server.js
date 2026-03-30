@@ -3515,9 +3515,22 @@ app.get('/admin', requireAdmin, requirePermission('dashboard.view'), (req, res) 
         var _srvTimer = null;
         function srvFetch() {
             fetch('/admin/server/stats', { cache: 'no-store' })
-                .then(function(r) { return r.ok ? r.json() : Promise.reject(); })
-                .then(function(d) { srvApply(d); })
-                .catch(function() {});
+                .then(function(r) {
+                    if (r.ok) return r.json();
+                    return Promise.reject('HTTP ' + r.status + (r.redirected ? ' (redirect \u2013 Sitzung abgelaufen?)' : ''));
+                })
+                .then(function(d) {
+                    var logEl = document.getElementById('srv-log');
+                    if (logEl) logEl.style.color = '';
+                    srvApply(d);
+                })
+                .catch(function(reason) {
+                    var logEl = document.getElementById('srv-log');
+                    if (!logEl) return;
+                    var msg = (typeof reason === 'string') ? reason : (reason && reason.message ? reason.message : String(reason));
+                    logEl.textContent = 'Fehler beim Laden der Statistiken: ' + msg;
+                    logEl.style.color = '#dc2626';
+                });
         }
         function srvStartPolling() {
             if (_srvTimer) return;
@@ -3528,15 +3541,19 @@ app.get('/admin', requireAdmin, requirePermission('dashboard.view'), (req, res) 
             if (_srvTimer) { clearInterval(_srvTimer); _srvTimer = null; }
         }
 
-        document.querySelectorAll('.term-live-row').forEach(function(row) {
-            var tid = row.getAttribute('data-tid');
-            if (!tid) return;
-            fetchTerminalStatus(tid, row);
-            var ms = parseInt(row.getAttribute('data-interval') || '30', 10) * 60 * 1000;
-            if (_tsTimers[tid]) clearInterval(_tsTimers[tid]);
-            _tsTimers[tid] = setInterval(function() { fetchTerminalStatus(tid, row); }, ms);
-        });
-        srvStartPolling();
+        (function() {
+            document.querySelectorAll('.term-live-row').forEach(function(row) {
+                var tid = row.getAttribute('data-tid');
+                if (!tid) return;
+                fetchTerminalStatus(tid, row);
+                var ms = parseInt(row.getAttribute('data-interval') || '30', 10) * 60 * 1000;
+                if (_tsTimers[tid]) clearInterval(_tsTimers[tid]);
+                _tsTimers[tid] = setInterval(function() { fetchTerminalStatus(tid, row); }, ms);
+            });
+            var logEl = document.getElementById('srv-log');
+            if (logEl) { logEl.textContent = 'Laden\u2026'; logEl.style.color = ''; }
+            srvStartPolling();
+        })();
 
         document.addEventListener('visibilitychange', function() {
             if (document.hidden) { srvStopPolling(); } else { srvStartPolling(); }

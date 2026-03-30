@@ -167,7 +167,12 @@ ${USER} ALL=(ALL) NOPASSWD: ${SYSTEMCTL_BIN} status ${SERVICE_NAME}
 ${USER} ALL=(ALL) NOPASSWD: ${REBOOT_BIN}
 EOF
 sudo chmod 440 "$SUDOERS_FILE"
-sudo visudo -cf "$SUDOERS_FILE" && echo "==> sudoers OK" || echo "==> WARNUNG: sudoers Syntax-Fehler, wird entfernt" && sudo rm -f "$SUDOERS_FILE"
+if sudo visudo -cf "$SUDOERS_FILE"; then
+    echo "==> sudoers OK"
+else
+    echo "==> WARNUNG: sudoers Syntax-Fehler, wird entfernt"
+    sudo rm -f "$SUDOERS_FILE"
+fi
 
 # ──────────────────────────────────────────────
 # nginx + Let's Encrypt (nur wenn HTTPS gewählt)
