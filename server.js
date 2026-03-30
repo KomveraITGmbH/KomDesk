@@ -98,7 +98,9 @@ if (process.env.HTTPS_ENABLED === 'true') {
 }
 
 
+const httpsEnabled = process.env.HTTPS_ENABLED === 'true';
 app.use(helmet({
+    hsts: httpsEnabled ? { maxAge: 31536000, includeSubDomains: true } : false,
     contentSecurityPolicy: {
         directives: {
             defaultSrc:  ["'self'"],
@@ -108,7 +110,8 @@ app.use(helmet({
             imgSrc:      ["'self'", "data:"],
             connectSrc:  ["'self'", "ws:", "wss:"],
             frameSrc:    ["'none'"],
-            objectSrc:   ["'none'"]
+            objectSrc:   ["'none'"],
+            formAction:  ["'self'"]
         }
     }
 }));
