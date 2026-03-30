@@ -3539,7 +3539,10 @@ app.post('/admin/save-sleep-schedule', requireAdmin, requirePermission('rooms.ed
 
         // Gerät per MAC finden
         const listRes = await fetch('https://usetrmnl.com/api/devices', { headers });
-        if (!listRes.ok) return res.json({ error: `TRMNL Fehler: ${listRes.status}` });
+        if (!listRes.ok) {
+            const errText = await listRes.text();
+            return res.json({ error: `TRMNL Fehler: ${listRes.status}`, body: errText.slice(0, 200) });
+        }
 
         const list = await listRes.json();
         const devices = list.devices || list;
@@ -3547,7 +3550,7 @@ app.post('/admin/save-sleep-schedule', requireAdmin, requirePermission('rooms.ed
             ? devices.find(d => (d.mac_address || '').toUpperCase() === room.trmnlDeviceMac.toUpperCase())
             : null;
 
-        if (!device) return res.json({ error: `Gerät mit MAC ${room.trmnlDeviceMac} nicht gefunden` });
+        if (!device) return res.json({ error: `Gerät mit MAC ${room.trmnlDeviceMac} nicht gefunden`, all_devices: Array.isArray(devices) ? devices.map(d => d.mac_address) : devices });
 
         // Zeiten HH:MM → Minuten seit Mitternacht
         const toMinutes = t => { const [h, m] = (t || '00:00').split(':').map(Number); return h * 60 + m; };
