@@ -6056,6 +6056,13 @@ app.get('/admin/ssh', requireAdmin, requirePermission('server.ssh'), (req, res) 
 
         function sshConnect(username, password) {
             sshWrite('\\r\\nVerbindung wird hergestellt\\u2026\\r\\n');
+            var connectTimer = setTimeout(function() {
+                sshWrite('\\r\\nTimeout: Keine Antwort vom SSH-Server.\\r\\n');
+                sshWrite('Prüfe ob SSH läuft: sudo systemctl status ssh\\r\\n');
+                if (sshWs) { sshWs.close(); sshWs = null; }
+                sshPromptUser();
+            }, 15000);
+
             fetch('/admin/ssh/token', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
@@ -6063,7 +6070,7 @@ app.get('/admin/ssh', requireAdmin, requirePermission('server.ssh'), (req, res) 
             })
             .then(function(r) { return r.json(); })
             .then(function(d) {
-                if (!d.token) { sshWrite('\\r\\nFehler: Kein Token erhalten.\\r\\n'); sshPromptUser(); return; }
+                if (!d.token) { clearTimeout(connectTimer); sshWrite('\\r\\nFehler: Kein Token erhalten.\\r\\n'); sshPromptUser(); return; }
                 var proto = location.protocol === 'https:' ? 'wss' : 'ws';
                 sshWs = new WebSocket(proto + '://' + location.host + '/admin/ssh/ws?token=' + encodeURIComponent(d.token));
                 sshWs.onopen = function() {
@@ -6072,6 +6079,7 @@ app.get('/admin/ssh', requireAdmin, requirePermission('server.ssh'), (req, res) 
                 sshWs.onmessage = function(e) {
                     var msg = JSON.parse(e.data);
                     if (msg.type === 'ready') {
+                        clearTimeout(connectTimer);
                         sshState = 'connected';
                         document.getElementById('ssh-disconnect-btn').style.display = '';
                         var dims = fitAddon.proposeDimensions();
@@ -6079,6 +6087,7 @@ app.get('/admin/ssh', requireAdmin, requirePermission('server.ssh'), (req, res) 
                     } else if (msg.type === 'data') {
                         sshTerm.write(msg.data);
                     } else if (msg.type === 'error') {
+                        clearTimeout(connectTimer);
                         sshWrite('\\r\\nFehler: ' + msg.message + '\\r\\n');
                         sshState = 'user';
                         document.getElementById('ssh-disconnect-btn').style.display = 'none';
