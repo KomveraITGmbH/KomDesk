@@ -3320,6 +3320,26 @@ app.get('/admin/rooms', requireAdmin, requirePermission('rooms.view'), (req, res
                                 </div>
                             </div>
 
+                            <label style="margin-top:12px;">Aktualisierung tagsüber</label>
+                            <div style="display:flex;gap:8px;align-items:center;">
+                                <input type="number" name="trmnlRefreshDayValue" min="1" max="9999" value="${escapeHtml(String(room.trmnlRefreshDayValue || '15'))}" style="width:80px;">
+                                <select name="trmnlRefreshDayUnit">
+                                    <option value="seconds" ${(room.trmnlRefreshDayUnit||'minutes')==='seconds' ? 'selected' : ''}>Sekunden</option>
+                                    <option value="minutes" ${(room.trmnlRefreshDayUnit||'minutes')==='minutes' ? 'selected' : ''}>Minuten</option>
+                                    <option value="hours"   ${(room.trmnlRefreshDayUnit||'minutes')==='hours'   ? 'selected' : ''}>Stunden</option>
+                                </select>
+                            </div>
+
+                            <label style="margin-top:12px;">Aktualisierung nachts <span style="font-weight:400;opacity:.6;">(während Sleep-Zeit, falls Sleep deaktiviert)</span></label>
+                            <div style="display:flex;gap:8px;align-items:center;">
+                                <input type="number" name="trmnlRefreshNightValue" min="1" max="9999" value="${escapeHtml(String(room.trmnlRefreshNightValue || '60'))}" style="width:80px;">
+                                <select name="trmnlRefreshNightUnit">
+                                    <option value="seconds" ${(room.trmnlRefreshNightUnit||'minutes')==='seconds' ? 'selected' : ''}>Sekunden</option>
+                                    <option value="minutes" ${(room.trmnlRefreshNightUnit||'minutes')==='minutes' ? 'selected' : ''}>Minuten</option>
+                                    <option value="hours"   ${(room.trmnlRefreshNightUnit||'minutes')==='hours'   ? 'selected' : ''}>Stunden</option>
+                                </select>
+                            </div>
+
                             <button type="submit">Raum speichern</button>
                         </form>
 
@@ -3491,6 +3511,10 @@ app.post('/admin/update-room', requireAdmin, requirePermission('rooms.edit'), re
         room.trmnlDeviceMac = String(req.body.trmnlDeviceMac || '').trim();
         room.trmnlSleepStart = String(req.body.trmnlSleepStart || '').trim();
         room.trmnlSleepEnd = String(req.body.trmnlSleepEnd || '').trim();
+        room.trmnlRefreshDayValue = parseInt(req.body.trmnlRefreshDayValue) || 15;
+        room.trmnlRefreshDayUnit = ['seconds','minutes','hours'].includes(req.body.trmnlRefreshDayUnit) ? req.body.trmnlRefreshDayUnit : 'minutes';
+        room.trmnlRefreshNightValue = parseInt(req.body.trmnlRefreshNightValue) || 60;
+        room.trmnlRefreshNightUnit = ['seconds','minutes','hours'].includes(req.body.trmnlRefreshNightUnit) ? req.body.trmnlRefreshNightUnit : 'minutes';
 
         saveRooms();
         return res.redirect('/admin/rooms');
@@ -3557,20 +3581,32 @@ app.post('/admin/save-sleep-schedule', requireAdmin, requirePermission('rooms.ed
         const sleepStart = room.trmnlSleepStart || '19:00';
         const sleepEnd   = room.trmnlSleepEnd   || '07:00';
 
+        // Refresh-Rate → Sekunden
+        const toSeconds = (val, unit) => {
+            const v = parseInt(val) || 1;
+            if (unit === 'seconds') return v;
+            if (unit === 'hours')   return v * 3600;
+            return v * 60; // minutes
+        };
+        const refreshDay   = toSeconds(room.trmnlRefreshDayValue   || 15,  room.trmnlRefreshDayUnit   || 'minutes');
+        const refreshNight = toSeconds(room.trmnlRefreshNightValue  || 60,  room.trmnlRefreshNightUnit || 'minutes');
+
         const patchRes = await fetch(`https://usetrmnl.com/api/devices/${device.id}`, {
             method: 'PATCH',
             headers,
             body: JSON.stringify({
                 sleep_mode_enabled: true,
                 sleep_start_time: toMinutes(sleepStart),
-                sleep_end_time:   toMinutes(sleepEnd)
+                sleep_end_time:   toMinutes(sleepEnd),
+                refresh_rate:     refreshDay,
+                sleep_refresh_rate: refreshNight
             })
         });
 
         const text = await patchRes.text();
         let body;
         try { body = JSON.parse(text); } catch(e) { body = text; }
-        return res.json({ status: patchRes.status, body, device_id: device.id, sleep_start: sleepStart, sleep_end: sleepEnd });
+        return res.json({ status: patchRes.status, body, device_id: device.id, sleep_start: sleepStart, sleep_end: sleepEnd, refresh_day_s: refreshDay, refresh_night_s: refreshNight });
     } catch (err) {
         return res.json({ error: err.message });
     }
