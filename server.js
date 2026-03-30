@@ -3672,85 +3672,97 @@ app.get('/admin/rooms', requireAdmin, requirePermission('rooms.view'), (req, res
             </tr>
         `).join('');
 
+        const freeSeats = room.seats.filter(s => !s.name || s.name === 'Frei').length;
+        const roomIdSafe = escapeHtml(room.id).replace(/[^a-zA-Z0-9_-]/g, '_');
+
         return `
-            <div class="card">
-                <h2>${escapeHtml(room.id)} – ${escapeHtml(room.abteilung)} (${escapeHtml(room.roomnumber)})</h2>
+            <div class="card" style="padding:0;overflow:hidden;">
+                <div onclick="toggleRoom('${roomIdSafe}')" style="display:flex;align-items:center;justify-content:space-between;padding:18px 20px;cursor:pointer;user-select:none;">
+                    <div style="display:flex;align-items:center;gap:12px;">
+                        <span id="roomArrow_${roomIdSafe}" style="font-size:13px;transition:transform .2s;display:inline-block;">▶</span>
+                        <span style="font-weight:700;font-size:15px;">${escapeHtml(room.id)} – ${escapeHtml(room.abteilung)}</span>
+                        <span style="opacity:.55;font-size:13px;">${escapeHtml(room.roomnumber)}</span>
+                    </div>
+                    <span style="font-size:12px;opacity:.6;">${freeSeats} / ${room.seats.length} frei</span>
+                </div>
 
-                ${
-                    hasPermission(req, 'rooms.edit')
-                        ? `
-                        <form method="POST" action="/admin/update-room">
-                            ${csrfField(req)}
-                            <input type="hidden" name="roomId" value="${escapeHtml(room.id)}">
-
-                            <label>Abteilung</label>
-                            <input type="text" name="abteilung" value="${escapeHtml(room.abteilung)}" required>
-
-                            <label>Raumnummer</label>
-                            <input type="text" name="roomnumber" value="${escapeHtml(room.roomnumber)}" required>
-
-                            <label>TRMNL Terminal <span style="font-weight:400;opacity:.6;">(optional)</span></label>
-                            <select name="terminalId">
-                                <option value="">– Kein Terminal –</option>
-                                ${Object.values(terminals).map(t => `<option value="${escapeHtml(t.id)}" ${room.terminalId === t.id ? 'selected' : ''}>${escapeHtml(t.name)}</option>`).join('')}
-                            </select>
-
-                            <button type="submit">Raum speichern</button>
-                        </form>
-                        `
-                        : `
-                        <p><strong>Abteilung:</strong> ${escapeHtml(room.abteilung)}</p>
-                        <p><strong>Raumnummer:</strong> ${escapeHtml(room.roomnumber)}</p>
-                        `
-                }
-
-                ${
-                    hasPermission(req, 'rooms.delete')
-                        ? `
-                        <form method="POST" action="/admin/delete-room" style="margin-top:16px;">
-                            ${csrfField(req)}
-                            <input type="hidden" name="roomId" value="${escapeHtml(room.id)}">
-                            <button type="submit" class="btn-danger">Raum löschen</button>
-                        </form>
-                        `
-                        : ''
-                }
-
-                <table style="margin-top:20px;">
-                    <thead>
-                        <tr>
-                            <th>Platz</th>
-                            <th>Name</th>
-                            <th>Status</th>
-                            <th>Aktion</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        ${seatRows}
-                    </tbody>
-                </table>
-
-                ${
-                    hasPermission(req, 'rooms.edit')
-                        ? `
-                        <div style="display:flex; gap:10px; margin-top:16px; align-items:center;">
-                            <form method="POST" action="/admin/add-seat" class="inline-form">
+                <div id="roomBody_${roomIdSafe}" style="display:none;padding:0 20px 20px 20px;border-top:1px solid var(--border);">
+                    ${
+                        hasPermission(req, 'rooms.edit')
+                            ? `
+                            <form method="POST" action="/admin/update-room" style="margin-top:16px;">
                                 ${csrfField(req)}
                                 <input type="hidden" name="roomId" value="${escapeHtml(room.id)}">
-                                <button type="submit" class="btn-secondary">+ Platz hinzufügen</button>
+
+                                <label>Abteilung</label>
+                                <input type="text" name="abteilung" value="${escapeHtml(room.abteilung)}" required>
+
+                                <label>Raumnummer</label>
+                                <input type="text" name="roomnumber" value="${escapeHtml(room.roomnumber)}" required>
+
+                                <label>TRMNL Terminal <span style="font-weight:400;opacity:.6;">(optional)</span></label>
+                                <select name="terminalId">
+                                    <option value="">– Kein Terminal –</option>
+                                    ${Object.values(terminals).map(t => `<option value="${escapeHtml(t.id)}" ${room.terminalId === t.id ? 'selected' : ''}>${escapeHtml(t.name)}</option>`).join('')}
+                                </select>
+
+                                <button type="submit">Raum speichern</button>
                             </form>
-                            ${room.seats.length > 1 ? `
-                            <form method="POST" action="/admin/remove-seat" class="inline-form">
+                            `
+                            : `
+                            <p style="margin-top:16px;"><strong>Abteilung:</strong> ${escapeHtml(room.abteilung)}</p>
+                            <p><strong>Raumnummer:</strong> ${escapeHtml(room.roomnumber)}</p>
+                            `
+                    }
+
+                    ${
+                        hasPermission(req, 'rooms.delete')
+                            ? `
+                            <form method="POST" action="/admin/delete-room" style="margin-top:16px;">
                                 ${csrfField(req)}
                                 <input type="hidden" name="roomId" value="${escapeHtml(room.id)}">
-                                <button type="submit" class="btn-danger">− Letzten Platz entfernen</button>
+                                <button type="submit" class="btn-danger">Raum löschen</button>
                             </form>
-                            ` : ''}
-                            <span class="muted" style="font-size:13px;">${room.seats.length} Platz${room.seats.length !== 1 ? 'plätze' : ''}</span>
-                        </div>
-                        `
-                        : ''
-                }
+                            `
+                            : ''
+                    }
+
+                    <table style="margin-top:20px;">
+                        <thead>
+                            <tr>
+                                <th>Platz</th>
+                                <th>Name</th>
+                                <th>Status</th>
+                                <th>Aktion</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            ${seatRows}
+                        </tbody>
+                    </table>
+
+                    ${
+                        hasPermission(req, 'rooms.edit')
+                            ? `
+                            <div style="display:flex; gap:10px; margin-top:16px; align-items:center;">
+                                <form method="POST" action="/admin/add-seat" class="inline-form">
+                                    ${csrfField(req)}
+                                    <input type="hidden" name="roomId" value="${escapeHtml(room.id)}">
+                                    <button type="submit" class="btn-secondary">+ Platz hinzufügen</button>
+                                </form>
+                                ${room.seats.length > 1 ? `
+                                <form method="POST" action="/admin/remove-seat" class="inline-form">
+                                    ${csrfField(req)}
+                                    <input type="hidden" name="roomId" value="${escapeHtml(room.id)}">
+                                    <button type="submit" class="btn-danger">− Letzten Platz entfernen</button>
+                                </form>
+                                ` : ''}
+                                <span class="muted" style="font-size:13px;">${room.seats.length} Platz${room.seats.length !== 1 ? 'plätze' : ''}</span>
+                            </div>
+                            `
+                            : ''
+                    }
+                </div>
             </div>
         `;
     }).join('');
@@ -3784,6 +3796,17 @@ app.get('/admin/rooms', requireAdmin, requirePermission('rooms.view'), (req, res
         }
 
         ${roomCards || '<div class="card"><p>Keine Räume vorhanden.</p></div>'}
+
+        <script>
+        function toggleRoom(rid) {
+            var body  = document.getElementById('roomBody_' + rid);
+            var arrow = document.getElementById('roomArrow_' + rid);
+            if (!body) return;
+            var open = body.style.display === 'none' || body.style.display === '';
+            body.style.display  = open ? 'block' : 'none';
+            if (arrow) arrow.style.transform = open ? 'rotate(90deg)' : '';
+        }
+        </script>
     `;
 
     res.send(renderAdminLayout(req, 'Räume', content));
