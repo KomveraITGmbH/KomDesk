@@ -3053,21 +3053,7 @@ app.get('/admin', requireAdmin, requirePermission('dashboard.view'), (req, res) 
             <div style="font-size:13px;margin-top:6px;">Klicke auf <strong>Konfigurieren</strong> um Widgets hinzuzufügen</div>
         </div>
 
-        <!-- Config Sidebar -->
-        <div id="configOverlay" onclick="closeConfig()" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.4);z-index:9998;"></div>
-        <div id="configPanel" style="position:fixed;top:0;right:0;width:300px;height:100%;background:var(--card-bg);border-left:1px solid var(--border);z-index:9999;flex-direction:column;box-shadow:-6px 0 24px rgba(0,0,0,.25);display:none;">
-            <div style="padding:18px 18px 12px;border-bottom:1px solid var(--border);display:flex;justify-content:space-between;align-items:center;flex-shrink:0;">
-                <div>
-                    <div style="font-weight:700;font-size:15px;">Widgets</div>
-                    <div style="font-size:12px;opacity:.5;margin-top:2px;">Auf Dashboard ziehen</div>
-                </div>
-                <button type="button" onclick="closeConfig()" style="background:none;border:none;cursor:pointer;font-size:20px;opacity:.5;padding:0;">✕</button>
-            </div>
-            <div id="widgetCatalog" style="flex:1;overflow-y:auto;padding:12px;display:flex;flex-direction:column;gap:8px;"></div>
-            <div style="padding:12px 18px;border-top:1px solid var(--border);flex-shrink:0;">
-                <button type="button" onclick="clearDash()" style="width:100%;background:none;border:1px solid var(--border);color:var(--text);font-size:13px;padding:8px;">Dashboard leeren</button>
-            </div>
-        </div>
+        <!-- Config panel created dynamically by JS -->
 
         <!-- Drop indicator -->
         <div id="dropIndicator" style="display:none;position:fixed;inset:0;background:rgba(99,102,241,.08);border:3px dashed #6366f1;z-index:150;pointer-events:none;border-radius:8px;"></div>
@@ -3211,19 +3197,46 @@ app.get('/admin', requireAdmin, requirePermission('dashboard.view'), (req, res) 
             if (data.startsWith('add:')) addWidget(data.slice(4));
         });
 
+        function ensureConfigPanel() {
+            if (document.getElementById('configPanel')) return;
+            var ov = document.createElement('div');
+            ov.id = 'configOverlay';
+            ov.style.cssText = 'display:none;position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:9998;cursor:pointer;';
+            ov.addEventListener('click', closeConfig);
+            document.body.appendChild(ov);
+
+            var bg = getComputedStyle(document.documentElement).getPropertyValue('--card-bg').trim() || '#ffffff';
+            var bd = getComputedStyle(document.documentElement).getPropertyValue('--border').trim() || '#e5e7eb';
+            var tx = getComputedStyle(document.documentElement).getPropertyValue('--text').trim() || '#1f2937';
+
+            var pn = document.createElement('div');
+            pn.id = 'configPanel';
+            pn.style.cssText = 'display:none;position:fixed;top:0;right:0;width:300px;height:100vh;z-index:9999;flex-direction:column;box-shadow:-4px 0 30px rgba(0,0,0,.25);overflow:hidden;';
+            pn.style.backgroundColor = bg || '#ffffff';
+            pn.style.borderLeft = '1px solid ' + (bd || '#e5e7eb');
+            pn.innerHTML =
+                '<div style="padding:18px;border-bottom:1px solid '+(bd||'#e5e7eb')+';display:flex;justify-content:space-between;align-items:center;flex-shrink:0;">' +
+                  '<div><div style="font-weight:700;font-size:15px;">Widgets</div><div style="font-size:12px;opacity:.55;margin-top:2px;">Hinzufügen oder ziehen</div></div>' +
+                  '<button onclick="closeConfig()" style="background:none;border:none;cursor:pointer;font-size:22px;line-height:1;opacity:.5;padding:4px;">✕</button>' +
+                '</div>' +
+                '<div id="widgetCatalog" style="flex:1;overflow-y:auto;padding:12px;display:flex;flex-direction:column;gap:8px;"></div>' +
+                '<div style="padding:12px 18px;border-top:1px solid '+(bd||'#e5e7eb')+';flex-shrink:0;">' +
+                  '<button onclick="clearDash()" style="width:100%;background:none;border:1px solid '+(bd||'#e5e7eb')+';color:'+(tx||'#1f2937')+';font-size:13px;padding:8px;cursor:pointer;border-radius:6px;">Dashboard leeren</button>' +
+                '</div>';
+            document.body.appendChild(pn);
+        }
+
         function openConfig() {
-            var overlay = document.getElementById('configOverlay');
-            var panel   = document.getElementById('configPanel');
-            // Portal: move to body so no parent overflow/z-index clips the panel
-            if (overlay.parentNode !== document.body) document.body.appendChild(overlay);
-            if (panel.parentNode   !== document.body) document.body.appendChild(panel);
+            ensureConfigPanel();
             buildCatalog();
-            overlay.style.display = 'block';
-            panel.style.display   = 'flex';
+            document.getElementById('configOverlay').style.display = 'block';
+            document.getElementById('configPanel').style.display   = 'flex';
         }
         function closeConfig() {
-            document.getElementById('configOverlay').style.display = 'none';
-            document.getElementById('configPanel').style.display   = 'none';
+            var ov = document.getElementById('configOverlay');
+            var pn = document.getElementById('configPanel');
+            if (ov) ov.style.display = 'none';
+            if (pn) pn.style.display = 'none';
         }
 
         function fetchTerminalStatus(tid, row) {
