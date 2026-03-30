@@ -90,6 +90,7 @@ const loginLimiter = rateLimit({
     message: 'Zu viele Login-Versuche. Bitte 15 Minuten warten.',
     standardHeaders: true,
     legacyHeaders: false,
+    validate: { xForwardedForHeader: false },
 });
 
 const setupLimiter = rateLimit({
@@ -98,6 +99,7 @@ const setupLimiter = rateLimit({
     message: 'Zu viele Setup-Versuche. Bitte 1 Stunde warten.',
     standardHeaders: true,
     legacyHeaders: false,
+    validate: { xForwardedForHeader: false },
 });
 
 /*
