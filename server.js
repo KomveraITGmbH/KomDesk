@@ -3535,10 +3535,10 @@ app.post('/admin/save-sleep-schedule', requireAdmin, requirePermission('rooms.ed
     if (!room.trmnlDeviceApiKey || !room.trmnlDeviceMac) return res.status(400).json({ error: 'Device API Key und MAC-Adresse fehlen' });
 
     try {
+        const headers = { 'Access-Token': room.trmnlDeviceApiKey, 'Content-Type': 'application/json' };
+
         // Gerät per MAC finden
-        const listRes = await fetch('https://usetrmnl.com/api/devices', {
-            headers: { 'Authorization': `Bearer ${room.trmnlDeviceApiKey}` }
-        });
+        const listRes = await fetch('https://usetrmnl.com/api/devices', { headers });
         if (!listRes.ok) return res.json({ error: `TRMNL Fehler: ${listRes.status}` });
 
         const list = await listRes.json();
@@ -3549,24 +3549,18 @@ app.post('/admin/save-sleep-schedule', requireAdmin, requirePermission('rooms.ed
 
         if (!device) return res.json({ error: `Gerät mit MAC ${room.trmnlDeviceMac} nicht gefunden` });
 
-        // Sleep Schedule setzen: schlafen von trmnlSleepStart bis trmnlSleepEnd
+        // Zeiten HH:MM → Minuten seit Mitternacht
+        const toMinutes = t => { const [h, m] = (t || '00:00').split(':').map(Number); return h * 60 + m; };
         const sleepStart = room.trmnlSleepStart || '19:00';
-        const sleepEnd = room.trmnlSleepEnd || '07:00';
+        const sleepEnd   = room.trmnlSleepEnd   || '07:00';
 
         const patchRes = await fetch(`https://usetrmnl.com/api/devices/${device.id}`, {
             method: 'PATCH',
-            headers: {
-                'Authorization': `Bearer ${room.trmnlDeviceApiKey}`,
-                'Content-Type': 'application/json'
-            },
+            headers,
             body: JSON.stringify({
-                device: {
-                    sleep_schedule: {
-                        enabled: true,
-                        start_time: sleepStart,
-                        end_time: sleepEnd
-                    }
-                }
+                sleep_mode_enabled: true,
+                sleep_start_time: toMinutes(sleepStart),
+                sleep_end_time:   toMinutes(sleepEnd)
             })
         });
 
