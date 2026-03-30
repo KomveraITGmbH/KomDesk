@@ -1,12 +1,14 @@
 #!/usr/bin/env bash
 set -e
 
-
 APP_DIR="/opt/komvera-deskview"
 SERVICE_NAME="komvera-deskview"
 GIT_REPO="https://github.com/JasonDarrKomvera/KomveraDeskView.git"
 NODE_MAJOR="20"
 
+# ──────────────────────────────────────────────
+# System prüfen
+# ──────────────────────────────────────────────
 echo "==> Prüfe System..."
 
 if [ ! -f /etc/os-release ]; then
@@ -15,15 +17,12 @@ if [ ! -f /etc/os-release ]; then
 fi
 
 . /etc/os-release
-
 echo "Erkanntes System: $PRETTY_NAME"
 
 case "$ID" in
-    ubuntu|debian|raspbian)
-        echo "==> Debian-basiertes System erkannt"
-        ;;
+    ubuntu|debian|raspbian) ;;
     *)
-        echo "Dieses Installationsscript unterstützt aktuell nur Ubuntu, Debian und Raspberry Pi OS."
+        echo "Dieses Script unterstützt nur Ubuntu, Debian und Raspberry Pi OS."
         exit 1
         ;;
 esac
@@ -36,15 +35,15 @@ echo "╔═══════════════════════�
 echo "║         HTTPS / SSL Einrichtung          ║"
 echo "╚══════════════════════════════════════════╝"
 echo ""
-echo "Möchtest du HTTPS mit nginx + Let's Encrypt einrichten?"
-echo "  → Voraussetzung: Eine Domain die auf diesen Server zeigt"
-echo "  → Ohne HTTPS läuft die App über HTTP (nur lokal/intern empfohlen)"
+echo "Möchtest du HTTPS mit Let's Encrypt einrichten?"
+echo "  → Voraussetzung: Eine Domain die auf diesen Server zeigt (A-Record)"
+echo "  → Ohne HTTPS läuft die App über HTTP auf Port 80"
 echo ""
 
 HTTPS_ENABLED=false
 DOMAIN=""
+LE_EMAIL=""
 
-# Stelle sicher dass stdin vom Terminal kommt (auch bei curl | bash)
 exec < /dev/tty
 
 read -r -p "HTTPS einrichten? [j/N]: " HTTPS_CHOICE
@@ -56,14 +55,14 @@ if [[ "$HTTPS_CHOICE" =~ ^[jJyY]$ ]]; then
 
     if [ -z "$DOMAIN" ]; then
         echo "Keine Domain eingegeben – weiter mit HTTP."
-        HTTPS_ENABLED=false
     else
         echo ""
-        read -r -p "E-Mail für Let's Encrypt (für Zertifikat-Benachrichtigungen): " LE_EMAIL
+        read -r -p "E-Mail für Let's Encrypt: " LE_EMAIL
         LE_EMAIL="${LE_EMAIL// /}"
+
         if [ -z "$LE_EMAIL" ]; then
             echo "Keine E-Mail eingegeben – weiter mit HTTP."
-            HTTPS_ENABLED=false
+            DOMAIN=""
         else
             HTTPS_ENABLED=true
             echo ""
@@ -79,28 +78,39 @@ fi
 echo ""
 
 # ──────────────────────────────────────────────
-# System vorbereiten
+# Pakete installieren
 # ──────────────────────────────────────────────
-echo "==> System wird vorbereitet..."
-sudo apt update
-sudo apt install -y curl ca-certificates gnupg git ufw
+echo "==> Pakete werden installiert..."
+sudo apt-get update -qq
+sudo apt-get install -y curl ca-certificates gnupg git ufw
 
-echo "==> Firewall (UFW) wird konfiguriert..."
+# ──────────────────────────────────────────────
+# Firewall konfigurieren
+# ──────────────────────────────────────────────
+echo "==> Firewall wird konfiguriert..."
+sudo ufw allow OpenSSH
 sudo ufw allow 80/tcp
 sudo ufw allow 443/tcp
-sudo ufw allow 3000/tcp
-sudo ufw allow OpenSSH
 sudo ufw --force enable
 
-if ! command -v node >/dev/null 2>&1; then
-    echo "==> Node.js wird installiert..."
-    curl -fsSL https://deb.nodesource.com/setup_${NODE_MAJOR}.x | sudo -E bash -
-    sudo apt install -y nodejs
+# ──────────────────────────────────────────────
+# Node.js installieren
+# ──────────────────────────────────────────────
+NODE_OK=false
+if command -v node >/dev/null 2>&1; then
+    INSTALLED_MAJOR=$(node -e "process.stdout.write(process.version.split('.')[0].replace('v',''))" 2>/dev/null || echo "0")
+    if [ "$INSTALLED_MAJOR" -ge "$NODE_MAJOR" ]; then
+        NODE_OK=true
+    fi
 fi
 
-echo "==> Node Version:"
-node -v
-npm -v
+if [ "$NODE_OK" = false ]; then
+    echo "==> Node.js ${NODE_MAJOR} wird installiert..."
+    curl -fsSL https://deb.nodesource.com/setup_${NODE_MAJOR}.x | sudo -E bash -
+    sudo apt-get install -y nodejs
+fi
+
+echo "==> Node $(node -v) / npm $(npm -v)"
 
 # ──────────────────────────────────────────────
 # App installieren
@@ -110,23 +120,27 @@ sudo mkdir -p "$APP_DIR"
 sudo chown -R "$USER:$USER" "$APP_DIR"
 
 if [ -d "$APP_DIR/.git" ]; then
-    echo "==> Vorhandenes Repo gefunden, Update wird durchgeführt..."
-    cd "$APP_DIR"
-    git pull
+    echo "==> Update wird durchgeführt..."
+    git -C "$APP_DIR" pull
 else
     echo "==> Repo wird geklont..."
     git clone "$GIT_REPO" "$APP_DIR"
 fi
 
 cd "$APP_DIR"
+mkdir -p public
 
 echo "==> npm install läuft..."
 npm install --omit=dev
 
-mkdir -p public
+# ──────────────────────────────────────────────
+# Node.js Berechtigung für Ports unter 1024
+# ──────────────────────────────────────────────
+echo "==> Node.js Portberechtigung wird gesetzt..."
+sudo setcap cap_net_bind_service=+ep "$(readlink -f "$(which node)")"
 
 # ──────────────────────────────────────────────
-# systemd Service
+# systemd Service erstellen
 # ──────────────────────────────────────────────
 echo "==> systemd Service wird erstellt..."
 
@@ -146,7 +160,7 @@ After=network.target
 [Service]
 Type=simple
 WorkingDirectory=${APP_DIR}
-ExecStart=/usr/bin/node ${APP_DIR}/server.js
+ExecStart=$(which node) ${APP_DIR}/server.js
 Restart=always
 RestartSec=5
 User=${USER}
@@ -163,7 +177,7 @@ sudo systemctl enable ${SERVICE_NAME}
 # sudoers – Befehle ohne Passwort
 # ──────────────────────────────────────────────
 echo "==> sudoers Eintrag wird erstellt..."
-SYSTEMCTL_BIN=$(readlink -f "$(which systemctl 2>/dev/null || echo "/usr/bin/systemctl")")
+SYSTEMCTL_BIN=$(readlink -f "$(which systemctl)")
 SUDOERS_FILE="/etc/sudoers.d/${SERVICE_NAME}"
 sudo tee "$SUDOERS_FILE" > /dev/null <<EOF
 ${USER} ALL=(ALL) NOPASSWD: ${SYSTEMCTL_BIN} status ${SERVICE_NAME} --no-pager -l
@@ -181,53 +195,63 @@ else
 fi
 
 # ──────────────────────────────────────────────
-# Let's Encrypt (nur wenn HTTPS gewählt)
+# Let's Encrypt
 # ──────────────────────────────────────────────
 if [ "$HTTPS_ENABLED" = true ]; then
     echo ""
     echo "==> Certbot wird installiert..."
-    sudo apt install -y certbot
+    sudo apt-get install -y certbot
 
-    echo "==> Service wird gestoppt (Port 80 für certbot freigeben)..."
+    echo "==> Laufenden Service stoppen (Port 443 freigeben)..."
     sudo systemctl stop ${SERVICE_NAME} 2>/dev/null || true
 
-    echo "==> SSL-Zertifikat wird beantragt (Let's Encrypt)..."
+    echo "==> SSL-Zertifikat wird beantragt..."
     sudo certbot certonly --standalone \
+        --preferred-challenges tls-alpn-01 \
         -d "$DOMAIN" \
         --email "$LE_EMAIL" \
         --agree-tos \
         --non-interactive
 
     echo ""
-    echo "✅ Zertifikat erhalten"
-    echo "   Pfad: /etc/letsencrypt/live/${DOMAIN}/"
-    echo "   Zertifikat wird automatisch erneuert (certbot-Timer aktiv)."
+    echo "✅ Zertifikat erhalten: /etc/letsencrypt/live/${DOMAIN}/"
 fi
 
 # ──────────────────────────────────────────────
-# Service starten (nach certbot, damit Zertifikat vorhanden)
+# Service starten
 # ──────────────────────────────────────────────
 echo "==> Service wird gestartet..."
 sudo systemctl restart ${SERVICE_NAME}
+
+sleep 2
+if sudo systemctl is-active --quiet ${SERVICE_NAME}; then
+    echo "✅ Service läuft"
+else
+    echo "❌ Service konnte nicht gestartet werden. Logs:"
+    sudo journalctl -u ${SERVICE_NAME} -n 20 --no-pager
+    exit 1
+fi
 
 # ──────────────────────────────────────────────
 # Fertig
 # ──────────────────────────────────────────────
 echo ""
-echo "✅ Installation fertig"
+echo "╔══════════════════════════════════════════╗"
+echo "║          ✅ Installation fertig          ║"
+echo "╚══════════════════════════════════════════╝"
+echo ""
 
 if [ "$HTTPS_ENABLED" = true ]; then
     echo "   App erreichbar unter: https://${DOMAIN}"
 else
-    echo "   App erreichbar unter: http://<Server-IP>:3000"
+    SERVER_IP=$(hostname -I | awk '{print $1}')
+    echo "   App erreichbar unter: http://${SERVER_IP}"
 fi
 
 echo ""
-echo "Update einspielen mit:"
+echo "Update einspielen:"
 echo "  cd ${APP_DIR} && git pull && npm install --omit=dev && sudo systemctl restart ${SERVICE_NAME}"
 echo ""
-echo "Status prüfen mit:"
-echo "  sudo systemctl status ${SERVICE_NAME}"
-echo ""
-echo "Logs ansehen mit:"
+echo "Logs:"
 echo "  journalctl -u ${SERVICE_NAME} -f"
+echo ""
