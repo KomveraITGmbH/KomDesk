@@ -3322,7 +3322,7 @@ app.get('/admin/rooms', requireAdmin, requirePermission('rooms.view'), (req, res
 
                             <label style="margin-top:12px;">Aktualisierung tagsüber</label>
                             <div style="display:flex;gap:8px;align-items:center;">
-                                <input type="number" name="trmnlRefreshDayValue" min="1" max="9999" value="${escapeHtml(String(room.trmnlRefreshDayValue || '15'))}" style="width:80px;">
+                                <input type="number" name="trmnlRefreshDayValue" min="1" max="9999" value="${escapeHtml(String(room.trmnlRefreshDayValue || '15'))}" style="width:80px;" title="Minimum: 60 Sekunden (TRMNL-Limit)">
                                 <select name="trmnlRefreshDayUnit">
                                     <option value="seconds" ${(room.trmnlRefreshDayUnit||'minutes')==='seconds' ? 'selected' : ''}>Sekunden</option>
                                     <option value="minutes" ${(room.trmnlRefreshDayUnit||'minutes')==='minutes' ? 'selected' : ''}>Minuten</option>
@@ -3584,9 +3584,11 @@ app.post('/admin/save-sleep-schedule', requireAdmin, requirePermission('rooms.ed
         // Refresh-Rate → Sekunden
         const toSeconds = (val, unit) => {
             const v = parseInt(val) || 1;
-            if (unit === 'seconds') return v;
-            if (unit === 'hours')   return v * 3600;
-            return v * 60; // minutes
+            let s;
+            if (unit === 'seconds') s = v;
+            else if (unit === 'hours') s = v * 3600;
+            else s = v * 60;
+            return Math.max(60, s); // TRMNL Minimum: 60 Sekunden
         };
         const refreshDay   = toSeconds(room.trmnlRefreshDayValue   || 15,  room.trmnlRefreshDayUnit   || 'minutes');
         const refreshNight = toSeconds(room.trmnlRefreshNightValue  || 60,  room.trmnlRefreshNightUnit || 'minutes');
