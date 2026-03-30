@@ -99,7 +99,18 @@ if (process.env.HTTPS_ENABLED === 'true') {
 
 
 app.use(helmet({
-    contentSecurityPolicy: false
+    contentSecurityPolicy: {
+        directives: {
+            defaultSrc:  ["'self'"],
+            scriptSrc:   ["'self'", "'unsafe-inline'", "https://cdn.jsdelivr.net"],
+            styleSrc:    ["'self'", "'unsafe-inline'", "https://cdn.jsdelivr.net"],
+            fontSrc:     ["'self'", "https://cdn.jsdelivr.net"],
+            imgSrc:      ["'self'", "data:"],
+            connectSrc:  ["'self'", "ws:", "wss:"],
+            frameSrc:    ["'none'"],
+            objectSrc:   ["'none'"]
+        }
+    }
 }));
 
 const loginLimiter = rateLimit({
@@ -115,6 +126,15 @@ const setupLimiter = rateLimit({
     windowMs: 60 * 60 * 1000,
     max: 5,
     message: 'Zu viele Setup-Versuche. Bitte 1 Stunde warten.',
+    standardHeaders: true,
+    legacyHeaders: false,
+    validate: { xForwardedForHeader: false },
+});
+
+const sshTokenLimiter = rateLimit({
+    windowMs: 60 * 1000,
+    max: 10,
+    message: 'Zu viele SSH-Token-Anfragen.',
     standardHeaders: true,
     legacyHeaders: false,
     validate: { xForwardedForHeader: false },
@@ -475,7 +495,7 @@ EXPRESS BASIS
 ==================================================
 */
 app.use(express.static('public'));
-app.use(cors());
+app.use(cors({ origin: false }));
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
@@ -517,6 +537,13 @@ function escapeHtml(value) {
         .replace(/>/g, '&gt;')
         .replace(/"/g, '&quot;')
         .replace(/'/g, '&#039;');
+}
+
+function validatePasswordStrength(password) {
+    if (password.length < 8)          return 'Das Passwort muss mindestens 8 Zeichen lang sein';
+    if (!/[A-Z]/.test(password))      return 'Das Passwort muss mindestens einen Großbuchstaben enthalten';
+    if (!/[0-9]/.test(password))      return 'Das Passwort muss mindestens eine Zahl enthalten';
+    return null;
 }
 
 /*
@@ -2553,9 +2580,8 @@ app.post('/admin/setup', setupLimiter, requireCsrf, async (req, res) => {
             return res.status(400).send('Die Passwörter stimmen nicht überein');
         }
 
-        if (password.length < 8) {
-            return res.status(400).send('Das Passwort muss mindestens 8 Zeichen lang sein');
-        }
+        const pwErr1 = validatePasswordStrength(password);
+        if (pwErr1) return res.status(400).send(pwErr1);
 
         if (sessionSecret.length < 32) {
             return res.status(400).send('Das Session Secret sollte mindestens 32 Zeichen lang sein');
@@ -3460,7 +3486,7 @@ app.get('/admin/system', requireAdmin, requirePermission('system.settings'), (re
                 ${csrfField(req)}
                 <label>Neues Session Secret</label>
                 <div class="field-wrap">
-                    <input type="password" id="sys_secret" name="sessionSecret" value="${escapeHtml(appConfig.sessionSecret || '')}" required>
+                    <input type="password" id="sys_secret" name="sessionSecret" placeholder="Leer lassen um bestehendes Secret zu behalten" autocomplete="off">
                     <button type="button" class="eye-btn" data-eye="sys_secret" onclick="toggleVis('sys_secret')">&#128065;</button>
                 </div>
                 <button type="submit">Session Secret speichern</button>
@@ -3502,15 +3528,13 @@ app.post('/admin/system/session-secret', requireAdmin, requirePermission('system
     try {
         const newSecret = String(req.body.sessionSecret || '').trim();
 
-        if (!newSecret) {
-            return res.status(400).send('Session Secret fehlt');
-        }
-
-        if (newSecret.length < 32) {
+        if (newSecret && newSecret.length < 32) {
             return res.status(400).send('Das Session Secret sollte mindestens 32 Zeichen lang sein');
         }
 
-        appConfig.sessionSecret = newSecret;
+        if (newSecret) {
+            appConfig.sessionSecret = newSecret;
+        }
         saveAppConfig();
 
         return res.send(renderAdminLayout(req, 'System', `
@@ -4902,9 +4926,8 @@ app.post('/admin/admins/create', requireAdmin, requirePermission('admins.create'
             return res.status(400).send('Eingabe zu lang');
         }
 
-        if (password.length < 8) {
-            return res.status(400).send('Das Passwort muss mindestens 8 Zeichen lang sein');
-        }
+        const pwErr2 = validatePasswordStrength(password);
+        if (pwErr2) return res.status(400).send(pwErr2);
 
         if (password.length > 256) {
             return res.status(400).send('Passwort zu lang');
@@ -5008,9 +5031,8 @@ app.post('/admin/admins/edit', requireAdmin, requirePermission('admins.edit'), r
         }
 
         if (password.trim()) {
-            if (password.length < 8) {
-                return res.status(400).send('Das neue Passwort muss mindestens 8 Zeichen lang sein');
-            }
+            const pwErr3 = validatePasswordStrength(password);
+            if (pwErr3) return res.status(400).send(pwErr3);
             if (password.length > 256) {
                 return res.status(400).send('Passwort zu lang');
             }
@@ -6167,7 +6189,7 @@ app.get('/admin/ssh', requireAdmin, requirePermission('server.ssh'), (req, res) 
     res.send(renderAdminLayout(req, 'SSH-Konsole', content));
 });
 
-app.post('/admin/ssh/token', requireAdmin, requirePermission('server.ssh'), requireCsrf, (req, res) => {
+app.post('/admin/ssh/token', sshTokenLimiter, requireAdmin, requirePermission('server.ssh'), requireCsrf, (req, res) => {
     const token = crypto.randomBytes(32).toString('hex');
     sshTokens.set(token, { adminUsername: req.session.adminUsername, expires: Date.now() + 30000 });
     res.json({ token });
@@ -6220,6 +6242,7 @@ START
             let ready = false;
 
             ws.on('message', (raw) => {
+                if (raw.length > 64 * 1024) { ws.close(); return; }
                 let msg;
                 try { msg = JSON.parse(raw); } catch { return; }
 
@@ -6258,15 +6281,14 @@ START
                     });
                     const sshHost = String(msg.host || '127.0.0.1').trim();
                     const sshPort = parseInt(msg.port) || 22;
-                    console.log(`[SSH] Verbindungsversuch zu ${sshHost}:${sshPort} als ${String(msg.username||'').trim()}`);
+                    console.log(`[SSH] Verbindungsversuch zu ${sshHost}:${sshPort}`);
                     ssh.connect({
                         host:           sshHost,
                         port:           sshPort,
                         username:       String(msg.username || '').trim(),
                         password:       String(msg.password || ''),
                         readyTimeout:   8000,
-                        hostVerifier:   () => true,
-                        algorithms: {
+                            algorithms: {
                             serverHostKey: ['ssh-rsa','ecdsa-sha2-nistp256','ecdsa-sha2-nistp384','ecdsa-sha2-nistp521','ssh-ed25519']
                         },
                         debug: (info) => console.log('[SSH-DBG]', info)
