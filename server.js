@@ -3055,7 +3055,7 @@ app.get('/admin', requireAdmin, requirePermission('dashboard.view'), (req, res) 
 
         <!-- Config Sidebar -->
         <div id="configOverlay" onclick="closeConfig()" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.35);z-index:200;"></div>
-        <div id="configPanel" style="display:none;position:fixed;top:0;right:0;width:280px;height:100%;background:var(--card);border-left:1px solid var(--border);z-index:201;display:flex;flex-direction:column;box-shadow:-6px 0 24px rgba(0,0,0,.15);">
+        <div id="configPanel" style="position:fixed;top:0;right:0;width:300px;height:100%;background:var(--card);border-left:1px solid var(--border);z-index:201;flex-direction:column;box-shadow:-6px 0 24px rgba(0,0,0,.15);display:none;">
             <div style="padding:18px 18px 12px;border-bottom:1px solid var(--border);display:flex;justify-content:space-between;align-items:center;flex-shrink:0;">
                 <div>
                     <div style="font-weight:700;font-size:15px;">Widgets</div>
@@ -3091,11 +3091,20 @@ app.get('/admin', requireAdmin, requirePermission('dashboard.view'), (req, res) 
         var DASH_CSRF = '${getCsrfToken(req)}';
         var _tsTimers = {};
 
+        // Standard-Widgets für neues Dashboard
+        var DEFAULT_LAYOUT = ${JSON.stringify(
+            ALLOWED_WIDGETS.filter(w => ['stats','room_occupancy','terminals','quick_actions','my_permissions'].includes(w.id)).map(w => w.id)
+        )};
+
         // Server-Layout als initiale Quelle; ungültige Widget-IDs entfernen
         if (SERVER_LAYOUT !== null) {
             localStorage.setItem(DASH_KEY, JSON.stringify(
                 SERVER_LAYOUT.filter(function(id){ return CATALOG.some(function(c){ return c.id===id; }); })
             ));
+        } else if (!localStorage.getItem(DASH_KEY)) {
+            // Erstes Login: Standard-Widgets setzen und sofort auf Server speichern
+            localStorage.setItem(DASH_KEY, JSON.stringify(DEFAULT_LAYOUT));
+            fetch('/admin/dashboard/save-layout', { method:'POST', headers:{'Content-Type':'application/x-www-form-urlencoded'}, body:'_csrf='+encodeURIComponent(DASH_CSRF)+'&layout='+encodeURIComponent(JSON.stringify(DEFAULT_LAYOUT)) });
         }
 
         function getLayout() { try { return JSON.parse(localStorage.getItem(DASH_KEY)||'[]'); } catch(e){ return []; } }
