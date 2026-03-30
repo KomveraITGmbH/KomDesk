@@ -156,12 +156,18 @@ sudo systemctl restart ${SERVICE_NAME}
 # sudoers – Neustart ohne Passwort
 # ──────────────────────────────────────────────
 echo "==> sudoers Eintrag wird erstellt..."
+SYSTEMCTL_BIN=$(which systemctl 2>/dev/null || echo "/usr/bin/systemctl")
+REBOOT_BIN=$(which reboot 2>/dev/null || echo "/usr/sbin/reboot")
 SUDOERS_FILE="/etc/sudoers.d/${SERVICE_NAME}"
 sudo tee "$SUDOERS_FILE" > /dev/null <<EOF
-${USER} ALL=(ALL) NOPASSWD: /bin/systemctl restart ${SERVICE_NAME}, /bin/systemctl status ${SERVICE_NAME}, /usr/bin/systemctl restart ${SERVICE_NAME}, /usr/bin/systemctl status ${SERVICE_NAME}, /sbin/reboot, /usr/sbin/reboot
+${USER} ALL=(ALL) NOPASSWD: ${SYSTEMCTL_BIN} restart ${SERVICE_NAME}
+${USER} ALL=(ALL) NOPASSWD: ${SYSTEMCTL_BIN} stop ${SERVICE_NAME}
+${USER} ALL=(ALL) NOPASSWD: ${SYSTEMCTL_BIN} start ${SERVICE_NAME}
+${USER} ALL=(ALL) NOPASSWD: ${SYSTEMCTL_BIN} status ${SERVICE_NAME}
+${USER} ALL=(ALL) NOPASSWD: ${REBOOT_BIN}
 EOF
 sudo chmod 440 "$SUDOERS_FILE"
-echo "==> sudoers OK: systemctl restart/status und reboot ohne Passwort möglich"
+sudo visudo -cf "$SUDOERS_FILE" && echo "==> sudoers OK" || echo "==> WARNUNG: sudoers Syntax-Fehler, wird entfernt" && sudo rm -f "$SUDOERS_FILE"
 
 # ──────────────────────────────────────────────
 # nginx + Let's Encrypt (nur wenn HTTPS gewählt)

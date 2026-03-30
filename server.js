@@ -688,6 +688,8 @@ function hasMicrosoftConfig() {
 
 function requireAdmin(req, res, next) {
     if (req.session && req.session.adminAuthenticated && getCurrentAdmin(req)) {
+        res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate');
+        res.setHeader('Pragma', 'no-cache');
         return next();
     }
     return res.redirect('/admin/login');
