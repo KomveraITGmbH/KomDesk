@@ -30,10 +30,10 @@ if [[ "$LANG_CHOICE" == "2" ]]; then
     MSG_UNSUPPORTED="Unsupported Linux system."
     MSG_ONLY_DEBIAN="This script only supports Ubuntu, Debian and Raspberry Pi OS."
     MSG_HTTPS_TITLE="║         HTTPS / SSL Setup                ║"
-    MSG_HTTPS_Q="Do you want to set up HTTPS with nginx + Let's Encrypt?"
-    MSG_HTTPS_REQ1="  → Requirement: A domain with an A-Record pointing to this server"
-    MSG_HTTPS_REQ2="  → Ports 80 and 443 must be forwarded from your router to this server"
-    MSG_HTTPS_REQ3="  → Without HTTPS the app runs via HTTP on port 80"
+    MSG_HTTPS_Q="Do you want to set up HTTPS with Let's Encrypt (DNS challenge)?"
+    MSG_HTTPS_REQ1="  → Requirement: A domain (internal server – no public access needed)"
+    MSG_HTTPS_REQ2="  → You must be able to add a DNS TXT record to your domain"
+    MSG_HTTPS_REQ3="  → Required for Microsoft SSO – server stays internal"
     MSG_HTTPS_PROMPT="Set up HTTPS? [y/N]: "
     MSG_HTTPS_YES_REGEX="^[yYjJ]$"
     MSG_DOMAIN_PROMPT="Enter domain (e.g. deskview.example.com): "
@@ -44,7 +44,7 @@ if [[ "$LANG_CHOICE" == "2" ]]; then
     MSG_DOMAIN_LBL="  Domain"
     MSG_EMAIL_LBL="  E-Mail"
     MSG_HTTPS_LBL="  HTTPS"
-    MSG_HTTPS_VAL="will be configured"
+    MSG_HTTPS_VAL="will be configured (DNS challenge)"
     MSG_CLEANUP="==> Cleaning up previous installation..."
     MSG_PACKAGES="==> Installing packages..."
     MSG_FIREWALL="==> Configuring firewall..."
@@ -60,7 +60,9 @@ if [[ "$LANG_CHOICE" == "2" ]]; then
     MSG_SUDOERS_WARN="==> WARNING: sudoers syntax error, removing"
     MSG_CERTBOT_INSTALL="==> Installing Certbot..."
     MSG_CERTBOT_CLEAN="==> Cleaning up old certificate configuration..."
-    MSG_CERTBOT_REQ="==> Requesting SSL certificate (via nginx)..."
+    MSG_CERTBOT_REQ="==> Requesting SSL certificate via DNS challenge..."
+    MSG_DNS_HINT="  → Certbot will now show you a TXT record to add to your DNS."
+    MSG_DNS_HINT2="  → Add it, wait ~60 seconds for propagation, then press Enter."
     MSG_CERT_OK="✅ Certificate obtained"
     MSG_SVC_START="==> Starting service..."
     MSG_SVC_OK="✅ Service is running"
@@ -77,10 +79,10 @@ else
     MSG_UNSUPPORTED="Nicht unterstütztes Linux-System."
     MSG_ONLY_DEBIAN="Dieses Script unterstützt nur Ubuntu, Debian und Raspberry Pi OS."
     MSG_HTTPS_TITLE="║         HTTPS / SSL Einrichtung          ║"
-    MSG_HTTPS_Q="Möchtest du HTTPS mit nginx + Let's Encrypt einrichten?"
-    MSG_HTTPS_REQ1="  → Voraussetzung: Eine Domain mit A-Record auf diesen Server"
-    MSG_HTTPS_REQ2="  → Port 80 und 443 müssen vom Router auf diesen Server weitergeleitet sein"
-    MSG_HTTPS_REQ3="  → Ohne HTTPS läuft die App über HTTP auf Port 80"
+    MSG_HTTPS_Q="Möchtest du HTTPS mit Let's Encrypt (DNS-Challenge) einrichten?"
+    MSG_HTTPS_REQ1="  → Voraussetzung: Eine Domain (interner Server – kein öffentlicher Zugriff nötig)"
+    MSG_HTTPS_REQ2="  → Du musst einen DNS TXT-Eintrag bei deiner Domain setzen können"
+    MSG_HTTPS_REQ3="  → Wird für Microsoft SSO benötigt – Server bleibt intern"
     MSG_HTTPS_PROMPT="HTTPS einrichten? [j/N]: "
     MSG_HTTPS_YES_REGEX="^[jJyY]$"
     MSG_DOMAIN_PROMPT="Domain eingeben (z.B. deskview.example.com): "
@@ -91,7 +93,7 @@ else
     MSG_DOMAIN_LBL="  Domain"
     MSG_EMAIL_LBL="  E-Mail"
     MSG_HTTPS_LBL="  HTTPS"
-    MSG_HTTPS_VAL="wird eingerichtet"
+    MSG_HTTPS_VAL="wird eingerichtet (DNS-Challenge)"
     MSG_CLEANUP="==> Vorherige Installation wird bereinigt..."
     MSG_PACKAGES="==> Pakete werden installiert..."
     MSG_FIREWALL="==> Firewall wird konfiguriert..."
@@ -107,7 +109,9 @@ else
     MSG_SUDOERS_WARN="==> WARNUNG: sudoers Syntax-Fehler, wird entfernt"
     MSG_CERTBOT_INSTALL="==> Certbot wird installiert..."
     MSG_CERTBOT_CLEAN="==> Alte Zertifikatskonfiguration bereinigen..."
-    MSG_CERTBOT_REQ="==> SSL-Zertifikat wird beantragt (via nginx)..."
+    MSG_CERTBOT_REQ="==> SSL-Zertifikat wird per DNS-Challenge beantragt..."
+    MSG_DNS_HINT="  → Certbot zeigt dir gleich einen TXT-Eintrag für deine DNS."
+    MSG_DNS_HINT2="  → Eintrag setzen, ~60 Sekunden warten, dann Enter drücken."
     MSG_CERT_OK="✅ Zertifikat erhalten"
     MSG_SVC_START="==> Service wird gestartet..."
     MSG_SVC_OK="✅ Service läuft"
@@ -217,7 +221,8 @@ sudo apt-get install -y curl ca-certificates gnupg git ufw nginx
 # ──────────────────────────────────────────────
 echo "$MSG_FIREWALL"
 sudo ufw allow OpenSSH
-sudo ufw allow 'Nginx Full'
+sudo ufw allow 80/tcp
+sudo ufw allow 443/tcp
 sudo ufw --force enable
 
 # ──────────────────────────────────────────────
@@ -261,20 +266,54 @@ echo "$MSG_NPM"
 npm install --omit=dev
 
 # ──────────────────────────────────────────────
+# Let's Encrypt via DNS-Challenge
+# ──────────────────────────────────────────────
+if [ "$HTTPS_ENABLED" = true ]; then
+    echo ""
+    echo "$MSG_CERTBOT_INSTALL"
+    sudo apt-get install -y certbot
+
+    echo "$MSG_CERTBOT_CLEAN"
+    sudo certbot delete --cert-name "$DOMAIN" --non-interactive 2>/dev/null || true
+
+    echo ""
+    echo "$MSG_CERTBOT_REQ"
+    echo "$MSG_DNS_HINT"
+    echo "$MSG_DNS_HINT2"
+    echo ""
+
+    sudo certbot certonly \
+        --manual \
+        --preferred-challenges dns \
+        -d "$DOMAIN" \
+        --email "$LE_EMAIL" \
+        --agree-tos
+
+    echo ""
+    echo "$MSG_CERT_OK: /etc/letsencrypt/live/${DOMAIN}/"
+fi
+
+# ──────────────────────────────────────────────
 # nginx konfigurieren
 # ──────────────────────────────────────────────
 echo "$MSG_NGINX"
 
 if [ "$HTTPS_ENABLED" = true ]; then
-    SERVER_NAME="$DOMAIN"
-else
-    SERVER_NAME="_"
-fi
-
-sudo tee "$NGINX_CONF" > /dev/null <<EOF
+    sudo tee "$NGINX_CONF" > /dev/null <<EOF
 server {
     listen 80;
-    server_name ${SERVER_NAME};
+    server_name ${DOMAIN};
+    return 301 https://\$host\$request_uri;
+}
+
+server {
+    listen 443 ssl;
+    server_name ${DOMAIN};
+
+    ssl_certificate     /etc/letsencrypt/live/${DOMAIN}/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/${DOMAIN}/privkey.pem;
+    ssl_protocols       TLSv1.2 TLSv1.3;
+    ssl_ciphers         HIGH:!aNULL:!MD5;
 
     location / {
         proxy_pass http://127.0.0.1:3000;
@@ -289,6 +328,26 @@ server {
     }
 }
 EOF
+else
+    sudo tee "$NGINX_CONF" > /dev/null <<EOF
+server {
+    listen 80;
+    server_name _;
+
+    location / {
+        proxy_pass http://127.0.0.1:3000;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade \$http_upgrade;
+        proxy_set_header Connection "upgrade";
+        proxy_set_header Host \$host;
+        proxy_set_header X-Real-IP \$remote_addr;
+        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto \$scheme;
+        proxy_read_timeout 86400;
+    }
+}
+EOF
+fi
 
 sudo ln -sf "$NGINX_CONF" /etc/nginx/sites-enabled/${SERVICE_NAME}
 sudo rm -f /etc/nginx/sites-enabled/default
@@ -341,29 +400,6 @@ if sudo visudo -cf "$SUDOERS_FILE"; then
 else
     echo "$MSG_SUDOERS_WARN"
     sudo rm -f "$SUDOERS_FILE"
-fi
-
-# ──────────────────────────────────────────────
-# Let's Encrypt
-# ──────────────────────────────────────────────
-if [ "$HTTPS_ENABLED" = true ]; then
-    echo ""
-    echo "$MSG_CERTBOT_INSTALL"
-    sudo apt-get install -y certbot python3-certbot-nginx
-
-    echo "$MSG_CERTBOT_CLEAN"
-    sudo certbot delete --cert-name "$DOMAIN" --non-interactive 2>/dev/null || true
-
-    echo "$MSG_CERTBOT_REQ"
-    sudo certbot --nginx \
-        -d "$DOMAIN" \
-        --email "$LE_EMAIL" \
-        --agree-tos \
-        --non-interactive \
-        --redirect
-
-    echo ""
-    echo "$MSG_CERT_OK: /etc/letsencrypt/live/${DOMAIN}/"
 fi
 
 # ──────────────────────────────────────────────
