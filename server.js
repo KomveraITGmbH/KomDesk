@@ -208,7 +208,9 @@ const PERMISSION_GROUPS = [
             { key: 'server.view' },
             { key: 'server.restart' },
             { key: 'server.reboot' },
-            { key: 'server.ssh' }
+            { key: 'server.ssh' },
+            { key: 'update.view' },
+            { key: 'update.perform' }
         ]
     },
     {
@@ -559,6 +561,69 @@ async function buildLogoSvg() {
     }
 }
 
+/*
+==================================================
+UPDATE-CHECKER
+==================================================
+*/
+const GITHUB_PKG_URL = 'https://raw.githubusercontent.com/JasonDarrKomvera/KomveraDeskView/main/package.json';
+let _localPkgVersion = '0.0.0';
+try { _localPkgVersion = JSON.parse(fs.readFileSync(path.join(__dirname, 'package.json'), 'utf8')).version || '0.0.0'; } catch {}
+
+const updateState = {
+    currentVersion: _localPkgVersion,
+    latestVersion: null,
+    hasUpdate: false,
+    lastCheck: null,
+    checking: false,
+    error: null
+};
+
+function compareVersions(a, b) {
+    const pa = String(a).split('.').map(Number);
+    const pb = String(b).split('.').map(Number);
+    for (let i = 0; i < Math.max(pa.length, pb.length); i++) {
+        const diff = (pa[i] || 0) - (pb[i] || 0);
+        if (diff !== 0) return diff;
+    }
+    return 0;
+}
+
+async function checkForUpdates() {
+    if (updateState.checking) return;
+    updateState.checking = true;
+    updateState.error = null;
+    try {
+        const resp = await fetch(GITHUB_PKG_URL, { headers: { 'Cache-Control': 'no-cache' } });
+        if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+        const pkg = await resp.json();
+        updateState.latestVersion = pkg.version || null;
+        updateState.hasUpdate = !!pkg.version && compareVersions(pkg.version, updateState.currentVersion) > 0;
+        updateState.lastCheck = Date.now();
+        if (updateState.hasUpdate) {
+            console.log(`[Update] Neue Version verfügbar: ${pkg.version} (aktuell: ${updateState.currentVersion})`);
+        }
+    } catch (e) {
+        updateState.error = e.message;
+        console.error('[Update] Prüfung fehlgeschlagen:', e.message);
+    } finally {
+        updateState.checking = false;
+    }
+}
+
+// Nachtcheck um 03:00 Uhr + sofort 15s nach Start
+(function scheduleUpdateChecks() {
+    setTimeout(checkForUpdates, 15000);
+    function scheduleMidnight() {
+        const now = new Date();
+        const next = new Date(now);
+        next.setHours(3, 0, 0, 0);
+        if (next <= now) next.setDate(next.getDate() + 1);
+        setTimeout(() => { checkForUpdates(); setInterval(checkForUpdates, 24 * 60 * 60 * 1000); scheduleMidnight(); }, next - now);
+    }
+    scheduleMidnight();
+})();
+
 function renderSupportFooter(extraText = '') {
     return `
         <div class="support-footer">
@@ -866,6 +931,7 @@ function renderSidebar(req) {
         hasPermission(req, 'system.settings') ? `<a href="/admin/system" data-i18n="nav.system">&#9632; ${L.nav?.system}</a>` : '',
         hasPermission(req, 'system.logo') ? `<a href="/admin/logo" data-i18n="nav.logo">&#9632; ${L.nav?.logo}</a>` : '',
         hasPermission(req, 'server.ssh')  ? `<a href="/admin/ssh" data-i18n="nav.ssh">&#9632; ${L.nav?.ssh}</a>` : '',
+        hasPermission(req, 'update.view') ? `<a href="/admin/update">&#9632; ${L.nav?.update || 'Update'}${updateState.hasUpdate ? ' <span style="background:#dc2626;color:#fff;border-radius:999px;font-size:10px;padding:1px 7px;margin-left:4px;font-weight:700;">NEU</span>' : ''}</a>` : '',
         `<a href="/admin/account" data-i18n="nav.myAccount">&#9632; ${L.nav?.myAccount}</a>`,
         `<a href="/admin/logout" style="color:#f87171;" data-i18n="nav.logout">&#9632; ${L.nav?.logout}</a>`
     ].filter(Boolean).join('');
@@ -3408,6 +3474,14 @@ app.get('/admin', requireAdmin, requirePermission('dashboard.view'), (req, res) 
                 <div class="muted"><span data-i18n="dashboard.loggedInAs">Angemeldet als</span> ${escapeHtml(currentAdmin?.displayName || currentAdmin?.username || 'Admin')} ${currentAdmin?.master ? '<span class="badge badge-master">MASTER</span>' : ''}</div>
             </div>
         </div>
+        ${updateState.hasUpdate && hasPermission(req, 'update.view') ? `
+        <div style="background:#fef3c7;border:1.5px solid #f59e0b;border-radius:14px;padding:14px 20px;margin-bottom:4px;display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;">
+            <div>
+                <span style="font-weight:700;color:#92400e;">🔔 Update verfügbar: v${escapeHtml(updateState.latestVersion)}</span>
+                <span style="font-size:13px;color:#78350f;margin-left:8px;">(aktuell: v${escapeHtml(updateState.currentVersion)})</span>
+            </div>
+            <a href="/admin/update" style="background:#f59e0b;color:#fff;padding:8px 16px;border-radius:8px;text-decoration:none;font-size:13px;font-weight:600;white-space:nowrap;">Update ansehen →</a>
+        </div>` : ''}
         <div class="db-grid">
             ${statsHtml}
             ${roomOccHtml}
@@ -6196,6 +6270,144 @@ app.get('/auth/error', (req, res) => {
         </body>
         </html>
     `);
+});
+
+/*
+==================================================
+UPDATE
+==================================================
+*/
+app.get('/admin/update', requireAdmin, requirePermission('update.view'), (req, res) => {
+    const lastCheckStr = updateState.lastCheck
+        ? new Date(updateState.lastCheck).toLocaleString('de-DE')
+        : 'Noch nie';
+
+    const content = `
+    <div class="topbar">
+        <div>
+            <h1 class="page-title">Update</h1>
+            <div class="muted">GitHub-Updates für DeskView</div>
+        </div>
+    </div>
+    <div class="card" style="max-width:560px;">
+        <div style="display:flex;flex-direction:column;gap:12px;">
+            <div style="display:flex;justify-content:space-between;align-items:center;padding:12px 16px;border:1px solid var(--border);border-radius:10px;font-size:14px;">
+                <span style="opacity:.6;font-weight:500;">Installierte Version</span>
+                <span style="font-weight:700;font-size:15px;">v${escapeHtml(updateState.currentVersion)}</span>
+            </div>
+            <div style="display:flex;justify-content:space-between;align-items:center;padding:12px 16px;border:1px solid var(--border);border-radius:10px;font-size:14px;">
+                <span style="opacity:.6;font-weight:500;">Neueste Version (GitHub)</span>
+                <span id="latest-ver" style="font-weight:700;font-size:15px;">${updateState.latestVersion ? `v${escapeHtml(updateState.latestVersion)}` : '–'}</span>
+            </div>
+            <div style="display:flex;justify-content:space-between;align-items:center;padding:12px 16px;border:1px solid var(--border);border-radius:10px;font-size:14px;">
+                <span style="opacity:.6;font-weight:500;">Status</span>
+                <span id="update-status" style="font-weight:600;">${updateState.hasUpdate
+                    ? `<span style="color:#d97706;">🔔 Update verfügbar</span>`
+                    : updateState.latestVersion
+                        ? `<span style="color:#059669;">✓ Aktuell</span>`
+                        : `<span style="opacity:.5;">Noch nicht geprüft</span>`}</span>
+            </div>
+            <div style="display:flex;justify-content:space-between;align-items:center;padding:12px 16px;border:1px solid var(--border);border-radius:10px;font-size:14px;">
+                <span style="opacity:.6;font-weight:500;">Zuletzt geprüft</span>
+                <span id="last-check" style="font-weight:500;opacity:.7;">${escapeHtml(lastCheckStr)}</span>
+            </div>
+        </div>
+
+        <div id="update-error" style="display:none;margin-top:14px;padding:12px 16px;background:var(--warn-bg);border:1px solid var(--warn-border);border-radius:10px;color:var(--warn-text);font-size:14px;"></div>
+        <div id="update-success" style="display:none;margin-top:14px;padding:12px 16px;background:#f0fdf4;border:1px solid #86efac;border-radius:10px;color:#166534;font-size:14px;font-weight:600;"></div>
+
+        <div style="display:flex;gap:10px;margin-top:20px;flex-wrap:wrap;">
+            ${hasPermission(req, 'update.view') ? `
+            <form id="check-form" method="POST" action="/admin/update/check?_csrf=${getCsrfToken(req)}">
+                <button type="submit" id="check-btn" class="btn" style="min-width:160px;">🔍 Nach Update suchen</button>
+            </form>` : ''}
+            ${hasPermission(req, 'update.perform') ? `
+            <form id="perform-form" method="POST" action="/admin/update/perform?_csrf=${getCsrfToken(req)}" style="${updateState.hasUpdate ? '' : 'display:none;'}" onsubmit="return confirmUpdate()">
+                <button type="submit" id="perform-btn" class="btn btn-primary" style="min-width:160px;">⬆️ Update durchführen</button>
+            </form>` : ''}
+        </div>
+        <p style="font-size:12px;opacity:.45;margin-top:12px;">Das Update lädt den neuesten Code von GitHub und startet den Server neu. Alle Daten bleiben erhalten.</p>
+    </div>
+
+    <div id="update-overlay" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.7);z-index:9999;display:none;align-items:center;justify-content:center;backdrop-filter:blur(4px);">
+        <div style="background:var(--card-bg);border-radius:20px;padding:36px 40px;max-width:360px;width:100%;text-align:center;box-shadow:0 24px 60px rgba(0,0,0,.3);">
+            <div style="width:48px;height:48px;border:4px solid var(--border);border-top-color:var(--primary);border-radius:50%;animation:spin .8s linear infinite;margin:0 auto 20px;"></div>
+            <div style="font-size:17px;font-weight:700;margin-bottom:8px;">Update wird durchgeführt…</div>
+            <div style="font-size:13px;opacity:.6;">Bitte warten – der Server startet anschließend neu.</div>
+        </div>
+    </div>
+    <style>@keyframes spin{to{transform:rotate(360deg)}}</style>
+    <script>
+    function confirmUpdate() {
+        if (!confirm('Update jetzt durchführen? Der Server startet danach neu und du wirst kurz abgemeldet.')) return false;
+        document.getElementById('update-overlay').style.display = 'flex';
+        return true;
+    }
+    // AJAX check
+    document.getElementById('check-form') && document.getElementById('check-form').addEventListener('submit', async function(e) {
+        e.preventDefault();
+        const btn = document.getElementById('check-btn');
+        btn.disabled = true; btn.textContent = '⏳ Prüfe…';
+        document.getElementById('update-error').style.display = 'none';
+        try {
+            const r = await fetch(this.action, { method:'POST', headers:{'Content-Type':'application/x-www-form-urlencoded'} });
+            const d = await r.json();
+            if (d.error) {
+                document.getElementById('update-error').textContent = d.error;
+                document.getElementById('update-error').style.display = 'block';
+            } else {
+                document.getElementById('latest-ver').textContent = d.latestVersion ? 'v'+d.latestVersion : '–';
+                document.getElementById('last-check').textContent = d.lastCheck || '–';
+                if (d.hasUpdate) {
+                    document.getElementById('update-status').innerHTML = '<span style="color:#d97706;">🔔 Update verfügbar</span>';
+                    const pf = document.getElementById('perform-form');
+                    if (pf) pf.style.display = '';
+                } else {
+                    document.getElementById('update-status').innerHTML = '<span style="color:#059669;">✓ Aktuell</span>';
+                }
+            }
+        } catch(err) {
+            document.getElementById('update-error').textContent = 'Fehler: ' + err.message;
+            document.getElementById('update-error').style.display = 'block';
+        }
+        btn.disabled = false; btn.textContent = '🔍 Nach Update suchen';
+    });
+    </script>
+    `;
+    res.send(renderAdminLayout(req, 'Update', content));
+});
+
+app.post('/admin/update/check', requireAdmin, requirePermission('update.view'), requireCsrf, async (_req, res) => {
+    await checkForUpdates();
+    if (updateState.error) {
+        return res.json({ error: 'Prüfung fehlgeschlagen: ' + updateState.error });
+    }
+    return res.json({
+        currentVersion: updateState.currentVersion,
+        latestVersion: updateState.latestVersion,
+        hasUpdate: updateState.hasUpdate,
+        lastCheck: updateState.lastCheck ? new Date(updateState.lastCheck).toLocaleString('de-DE') : null
+    });
+});
+
+app.post('/admin/update/perform', requireAdmin, requirePermission('update.perform'), requireCsrf, (req, res) => {
+    const APP_DIR = '/opt/komvera-deskview';
+    console.log('[Update] Update gestartet von:', getCurrentAdmin(req)?.username);
+    res.redirect('/admin/update');
+    // Nach Redirect ausführen
+    setTimeout(() => {
+        exec(`cd ${APP_DIR} && git pull origin main && npm install --omit=dev`, { timeout: 120000 }, (err, stdout, stderr) => {
+            if (err) {
+                console.error('[Update] git pull / npm install fehlgeschlagen:', err.message, stderr);
+                return;
+            }
+            console.log('[Update] Dateien aktualisiert:', stdout.slice(0, 300));
+            exec('sudo systemctl restart komvera-deskview', { timeout: 15000 }, (err2) => {
+                if (err2) console.error('[Update] Neustart fehlgeschlagen:', err2.message);
+                else console.log('[Update] Server neu gestartet.');
+            });
+        });
+    }, 500);
 });
 
 /*

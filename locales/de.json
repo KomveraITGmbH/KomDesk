@@ -29,6 +29,7 @@
     "system": "System",
     "logo": "Logo",
     "ssh": "SSH",
+    "update": "Update",
     "myAccount": "Mein Konto",
     "logout": "Logout"
   },
