@@ -190,14 +190,17 @@ function getMachineFingerprint() {
 function loadLicenseFile() {
     try {
         if (fs.existsSync(LICENSE_FILE)) {
-            return JSON.parse(fs.readFileSync(LICENSE_FILE, 'utf8'));
+            const raw = fs.readFileSync(LICENSE_FILE, 'utf8').trim();
+            const json = raw.startsWith('enc:') ? decryptValue(raw) : raw;
+            return JSON.parse(json);
         }
     } catch {}
     return null;
 }
 
 function saveLicenseFile(data) {
-    fs.writeFileSync(LICENSE_FILE, JSON.stringify(data, null, 2));
+    const encrypted = encryptValue(JSON.stringify(data));
+    fs.writeFileSync(LICENSE_FILE, encrypted);
 }
 
 async function keygenFetch(url, options = {}) {
@@ -386,6 +389,13 @@ const PERMISSION_GROUPS = [
             { key: 'terminals.create' },
             { key: 'terminals.edit' },
             { key: 'terminals.delete' }
+        ]
+    },
+    {
+        localeKey: 'license',
+        permissions: [
+            { key: 'license.view' },
+            { key: 'license.manage' }
         ]
     }
 ];
