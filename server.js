@@ -6310,7 +6310,7 @@ app.get('/admin/update', requireAdmin, requirePermission('update.view'), (req, r
     <div class="card" style="max-width:560px;margin-bottom:20px;">
         <div style="display:flex;flex-direction:column;gap:10px;">
             <div class="upd-row"><span class="upd-label">Installierte Version</span><span class="upd-val">v${escapeHtml(updateState.currentVersion)}</span></div>
-            <div class="upd-row"><span class="upd-label">Neueste Version (GitHub)</span><span id="latest-ver" class="upd-val">${updateState.latestVersion ? `v${escapeHtml(updateState.latestVersion)}` : '–'}</span></div>
+            <div class="upd-row"><span class="upd-label">Neueste Version</span><span id="latest-ver" class="upd-val">${updateState.latestVersion ? `v${escapeHtml(updateState.latestVersion)}` : '–'}</span></div>
             <div class="upd-row"><span class="upd-label">Status</span>
                 <span id="update-status" style="font-weight:600;">${updateState.hasUpdate
                     ? `<span style="color:#d97706;">🔔 Update verfügbar</span>`
@@ -6396,16 +6396,25 @@ app.get('/admin/update', requireAdmin, requirePermission('update.view'), (req, r
 
     async function loadVersions() {
         const btn = document.getElementById('load-vers-btn');
+        const list = document.getElementById('ver-list');
         btn.disabled = true; btn.textContent = '⏳ Lädt…';
+        document.getElementById('upd-error').style.display = 'none';
         try {
-            const r = await fetch('/admin/update/versions?_csrf=' + encodeURIComponent(CSRF), { method:'POST', headers:{'Content-Type':'application/x-www-form-urlencoded'} });
+            const r = await fetch('/admin/update/versions', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                body: '_csrf=' + encodeURIComponent(CSRF)
+            });
+            if (!r.ok) { showError('Server-Fehler: HTTP ' + r.status); btn.disabled=false; btn.textContent='Neu laden'; return; }
             const d = await r.json();
-            if (d.error) { showError(d.error); btn.disabled=false; btn.textContent='Versionen laden'; return; }
-            const list = document.getElementById('ver-list');
-            if (!d.versions || !d.versions.length) { list.innerHTML='<p style="opacity:.4;font-size:14px;margin:0;">Keine Versionen gefunden.</p>'; btn.disabled=false; btn.textContent='Versionen laden'; return; }
+            if (d.error) { showError(d.error); btn.disabled=false; btn.textContent='Neu laden'; return; }
+            if (!d.versions || !d.versions.length) {
+                list.innerHTML = '<p style="opacity:.4;font-size:14px;margin:0;">Keine Versionen gefunden. Erstelle zuerst einen Git-Tag und pushe ihn zu GitHub (<code>git tag v1.1.0 &amp;&amp; git push origin v1.1.0</code>).</p>';
+                btn.disabled=false; btn.textContent='Neu laden'; return;
+            }
+            const canP = ${JSON.stringify(canPerform)};
             list.innerHTML = d.versions.map(v => {
                 const isCurrent = v === CURRENT_VER || 'v'+CURRENT_VER === v || CURRENT_VER === 'v'+v;
-                const canP = ${JSON.stringify(canPerform)};
                 return '<div class="ver-row' + (isCurrent ? ' ver-current' : '') + '">' +
                     '<div style="display:flex;align-items:center;gap:10px;">' +
                     '<span class="ver-tag">' + v + '</span>' +
