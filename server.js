@@ -2217,30 +2217,60 @@ app.use((req, res, next) => {
     if (req.method === 'GET') return next();
 
     // Alle schreibenden Aktionen blockieren
+    const _logoExists = fs.existsSync(LOGO_FILE);
     return res.status(403).send(`<!DOCTYPE html>
 <html lang="de">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Lizenz nicht aktiv</title>
+<title>Lizenz nicht aktiv – DeskView</title>
+<script>(function(){var s=localStorage.getItem('deskview-theme')||'light';document.documentElement.setAttribute('data-theme',s);})();</script>
 <style>
   *{box-sizing:border-box;margin:0;padding:0}
-  body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif;background:#f3f4f6;min-height:100vh;display:flex;align-items:center;justify-content:center}
-  .card{background:#fff;border-radius:14px;box-shadow:0 4px 24px rgba(0,0,0,.08);padding:44px 40px;width:100%;max-width:420px;text-align:center}
-  .icon{font-size:48px;margin-bottom:16px}
-  h1{font-size:20px;font-weight:700;color:#dc2626;margin-bottom:10px}
-  p{font-size:14px;color:#6b7280;line-height:1.6;margin-bottom:24px}
-  a{display:inline-block;padding:10px 22px;background:#2563eb;color:#fff;border-radius:8px;text-decoration:none;font-size:14px;font-weight:600}
-  a:hover{background:#1d4ed8}
+  :root{
+    --bg:#f4f6f8;--card-bg:#ffffff;--text:#1f2937;--muted:#6b7280;
+    --border:#e5e7eb;--primary:#2563eb;--primary-hover:#1d4ed8;
+    --shadow:0 10px 30px rgba(0,0,0,0.07);
+  }
+  [data-theme="dark"]{
+    --bg:#0f172a;--card-bg:#1e293b;--text:#f1f5f9;--muted:#94a3b8;
+    --border:#334155;--primary:#3b82f6;--primary-hover:#2563eb;
+    --shadow:0 10px 30px rgba(0,0,0,0.4);
+  }
+  body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif;background:var(--bg);color:var(--text);min-height:100vh;display:flex;align-items:center;justify-content:center;transition:background .2s,color .2s}
+  .card{background:var(--card-bg);border-radius:14px;box-shadow:var(--shadow);padding:44px 40px;width:100%;max-width:440px;text-align:center;border:1px solid var(--border)}
+  .logo{margin-bottom:20px}
+  .logo img{height:44px;object-fit:contain}
+  .logo-text{font-size:18px;font-weight:700;color:var(--text)}
+  .icon{font-size:44px;margin-bottom:14px}
+  h1{font-size:19px;font-weight:700;color:#dc2626;margin-bottom:10px}
+  p{font-size:14px;color:var(--muted);line-height:1.7;margin-bottom:26px}
+  .btn{display:inline-block;padding:10px 24px;background:var(--primary);color:#fff;border-radius:8px;text-decoration:none;font-size:14px;font-weight:600;transition:background .2s}
+  .btn:hover{background:var(--primary-hover)}
+  .theme-btn{position:fixed;top:14px;right:14px;background:var(--card-bg);border:1px solid var(--border);color:var(--text);padding:6px 12px;border-radius:8px;cursor:pointer;font-size:13px}
+  .divider{border:none;border-top:1px solid var(--border);margin:24px 0}
 </style>
 </head>
 <body>
+<button class="theme-btn" onclick="toggleTheme()">&#9790; Modus</button>
 <div class="card">
+  <div class="logo">
+    ${_logoExists ? `<img src="/logo.png" alt="DeskView">` : `<span class="logo-text">Komvera DeskView</span>`}
+  </div>
   <div class="icon">🔒</div>
   <h1>Lizenz nicht aktiv</h1>
-  <p>Diese Aktion ist gesperrt, da keine gültige Lizenz vorhanden ist.<br>Bitte aktiviere zuerst deine Lizenz im Dashboard.</p>
-  <a href="/admin">Zum Dashboard</a>
+  <p>Diese Aktion ist gesperrt, da keine gültige Lizenz vorhanden ist.<br>Bitte aktiviere deine Lizenz im Dashboard.</p>
+  <a href="/admin" class="btn">Zum Dashboard</a>
+  <hr class="divider">
+  <p style="font-size:12px;">Bei Fragen wende dich an deinen Anbieter.</p>
 </div>
+<script>
+  function toggleTheme(){
+    var t=document.documentElement.getAttribute('data-theme')==='dark'?'light':'dark';
+    document.documentElement.setAttribute('data-theme',t);
+    localStorage.setItem('deskview-theme',t);
+  }
+</script>
 </body>
 </html>`);
 });
