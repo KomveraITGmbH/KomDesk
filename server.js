@@ -552,7 +552,7 @@ async function buildLogoSvg() {
             }
         }
         if (!d) return '';
-        return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${w} ${h}"><path fill="#000" d="${d}"/></svg>`;
+        return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${w} ${h}" style="height:55px;width:auto;max-width:200px;display:block;"><path fill="#000" d="${d}"/></svg>`;
     } catch (e) {
         console.error('buildLogoSvg Fehler:', e);
         return '';
