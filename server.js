@@ -2208,7 +2208,10 @@ LIZENZ ERZWINGEN
 app.use((req, res, next) => {
     if (licenseValid) return next();
     if (isSetupRequired()) return next();
-    if (req.path === '/admin/license/activate') return next();
+
+    // Immer erlaubt (Login, Setup, Lizenz-Aktivierung)
+    const alwaysAllowed = ['/admin/login', '/admin/setup', '/admin/license/activate', '/admin/auth/microsoft'];
+    if (alwaysAllowed.includes(req.path)) return next();
 
     // GET-Anfragen durchlassen – Banner wird im Layout angezeigt
     if (req.method === 'GET') return next();
