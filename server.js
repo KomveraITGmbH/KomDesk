@@ -155,6 +155,172 @@ const ADMINS_FILE = path.join(DATA_DIR, 'admins.json');
 const CONFIG_FILE = path.join(DATA_DIR, 'config.json');
 const KEY_FILE = path.join(DATA_DIR, 'app.key');
 const TERMINALS_FILE = path.join(DATA_DIR, 'terminals.json');
+const LICENSE_FILE   = path.join(DATA_DIR, 'license.json');
+
+/*
+==================================================
+LIZENZ (Keygen.sh)
+==================================================
+*/
+const KEYGEN_ACCOUNT    = '5a30cc60-4d74-49b3-bfb1-668ee3458a29';
+const KEYGEN_PUBLIC_KEY = 'f2e4f7eaace96e2c1e23cbc972f394d3fc8713c29fd7ed07505e9d117ec005ec';
+const KEYGEN_POLICY     = '5dc48534-c931-49c8-978e-33d5d107c3ef';
+const KEYGEN_PRODUCT    = 'd822de5e-55c9-40f0-8406-7eafa9be0272';
+
+let licenseValid = false;
+
+function getMachineFingerprint() {
+    const nets = os.networkInterfaces();
+    let mac = '';
+    for (const iface of Object.values(nets)) {
+        for (const addr of iface) {
+            if (!addr.internal && addr.mac && addr.mac !== '00:00:00:00:00:00') {
+                mac = addr.mac;
+                break;
+            }
+        }
+        if (mac) break;
+    }
+    return crypto.createHash('sha256')
+        .update(os.hostname() + mac)
+        .digest('hex')
+        .substring(0, 32);
+}
+
+function loadLicenseFile() {
+    try {
+        if (fs.existsSync(LICENSE_FILE)) {
+            return JSON.parse(fs.readFileSync(LICENSE_FILE, 'utf8'));
+        }
+    } catch {}
+    return null;
+}
+
+function saveLicenseFile(data) {
+    fs.writeFileSync(LICENSE_FILE, JSON.stringify(data, null, 2));
+}
+
+async function keygenFetch(url, options = {}) {
+    const https = require('https');
+    return new Promise((resolve, reject) => {
+        const urlObj = new URL(url);
+        const body = options.body || null;
+        const reqOptions = {
+            hostname: urlObj.hostname,
+            path: urlObj.pathname + urlObj.search,
+            method: options.method || 'GET',
+            headers: {
+                'Content-Type': 'application/vnd.api+json',
+                'Accept': 'application/vnd.api+json',
+                ...(options.headers || {})
+            }
+        };
+        if (body) reqOptions.headers['Content-Length'] = Buffer.byteLength(body);
+        const req = https.request(reqOptions, (res) => {
+            let data = '';
+            res.on('data', chunk => data += chunk);
+            res.on('end', () => {
+                try { resolve({ ok: res.statusCode < 400, status: res.statusCode, json: () => JSON.parse(data) }); }
+                catch { resolve({ ok: false, status: res.statusCode, json: () => ({}) }); }
+            });
+        });
+        req.on('error', reject);
+        if (body) req.write(body);
+        req.end();
+    });
+}
+
+async function activateLicense(licenseKey) {
+    const fingerprint = getMachineFingerprint();
+    try {
+        // 1. Validate key
+        const vRes = await keygenFetch(
+            `https://api.keygen.sh/v1/accounts/${KEYGEN_ACCOUNT}/licenses/actions/validate-key`,
+            {
+                method: 'POST',
+                body: JSON.stringify({ meta: { key: licenseKey, scope: { fingerprint } } })
+            }
+        );
+        const vData = vRes.json();
+        const code  = vData.meta?.code;
+        const valid = vData.meta?.valid;
+        const licenseId = vData.data?.id;
+
+        if (!licenseId) {
+            return { success: false, error: vData.meta?.detail || 'Lizenz ungültig' };
+        }
+        if (!valid && code !== 'NO_MACHINE' && code !== 'FINGERPRINT_SCOPE_MISMATCH') {
+            return { success: false, error: vData.meta?.detail || 'Lizenz ungültig' };
+        }
+
+        // 2. Maschine aktivieren falls nötig
+        let machineId = null;
+        if (code === 'NO_MACHINE' || code === 'FINGERPRINT_SCOPE_MISMATCH') {
+            const aRes = await keygenFetch(
+                `https://api.keygen.sh/v1/accounts/${KEYGEN_ACCOUNT}/machines`,
+                {
+                    method: 'POST',
+                    headers: { 'Authorization': `License ${licenseKey}` },
+                    body: JSON.stringify({
+                        data: {
+                            type: 'machines',
+                            attributes: { fingerprint, name: os.hostname(), platform: os.platform() },
+                            relationships: { license: { data: { type: 'licenses', id: licenseId } } }
+                        }
+                    })
+                }
+            );
+            const aData = aRes.json();
+            if (aData.errors) return { success: false, error: aData.errors[0]?.detail || 'Aktivierung fehlgeschlagen' };
+            machineId = aData.data?.id;
+        } else {
+            const mRes = await keygenFetch(
+                `https://api.keygen.sh/v1/accounts/${KEYGEN_ACCOUNT}/machines?fingerprint=${fingerprint}&limit=1`,
+                { headers: { 'Authorization': `License ${licenseKey}` } }
+            );
+            machineId = mRes.json().data?.[0]?.id;
+        }
+
+        const expiresAt = vData.data?.attributes?.expiry || null;
+        const saved = { key: licenseKey, licenseId, machineId, fingerprint, expiresAt, activatedAt: new Date().toISOString(), lastHeartbeat: new Date().toISOString() };
+        saveLicenseFile(saved);
+        licenseValid = true;
+        return { success: true };
+    } catch (err) {
+        return { success: false, error: 'Netzwerkfehler: ' + err.message };
+    }
+}
+
+async function sendHeartbeat() {
+    const data = loadLicenseFile();
+    if (!data?.machineId || !data?.key) { licenseValid = false; return false; }
+    try {
+        const res = await keygenFetch(
+            `https://api.keygen.sh/v1/accounts/${KEYGEN_ACCOUNT}/machines/${data.machineId}/actions/ping`,
+            { method: 'POST', headers: { 'Authorization': `License ${data.key}` } }
+        );
+        const json = res.json();
+        if (json.errors) { licenseValid = false; return false; }
+        data.lastHeartbeat = new Date().toISOString();
+        saveLicenseFile(data);
+        licenseValid = true;
+        console.log('[Lizenz] Heartbeat OK');
+        return true;
+    } catch {
+        console.warn('[Lizenz] Heartbeat Netzwerkfehler – Lizenz bleibt gültig');
+        return licenseValid;
+    }
+}
+
+async function checkLicenseOnStartup() {
+    const data = loadLicenseFile();
+    if (!data?.key || !data?.machineId) { licenseValid = false; return; }
+    console.log('[Lizenz] Prüfe Lizenz beim Start...');
+    const ok = await sendHeartbeat();
+    licenseValid = ok;
+    if (ok) console.log('[Lizenz] Lizenz gültig ✅');
+    else     console.warn('[Lizenz] Lizenz ungültig ❌');
+}
 
 /*
 ==================================================
@@ -1672,6 +1838,36 @@ function renderAdminLayout(req, title, content) {
                     <button class="hamburger-btn" onclick="toggleTheme()" style="font-size:14px;">&#9790;</button>
                 </div>
                 <div class="page-content">
+                    ${(function() {
+                        const licData = loadLicenseFile();
+                        const licError = req.query.licenseError ? String(req.query.licenseError) : null;
+                        if (!licenseValid) {
+                            return `<div style="background:#fef2f2;border:1px solid #fecaca;border-radius:10px;padding:20px 24px;margin-bottom:24px;">
+                                <div style="display:flex;align-items:center;gap:10px;margin-bottom:12px;">
+                                    <span style="font-size:20px;">🔒</span>
+                                    <strong style="color:#dc2626;font-size:16px;">Nicht lizenziert – Alle Funktionen gesperrt</strong>
+                                </div>
+                                <p style="color:#7f1d1d;font-size:14px;margin:0 0 14px 0;">Bitte gib deinen Lizenzschlüssel ein, um DeskView zu aktivieren.</p>
+                                ${licError ? `<div style="background:#fee2e2;border:1px solid #fca5a5;color:#b91c1c;border-radius:6px;padding:8px 12px;font-size:13px;margin-bottom:12px;">${escapeHtml(licError)}</div>` : ''}
+                                <form method="POST" action="/admin/license/activate" style="display:flex;gap:10px;flex-wrap:wrap;">
+                                    <input type="text" name="licenseKey" placeholder="Lizenzschlüssel eingeben…" required style="flex:1;min-width:220px;padding:9px 13px;border:1px solid #fca5a5;border-radius:7px;font-size:14px;outline:none;">
+                                    <button type="submit" style="padding:9px 20px;background:#dc2626;color:#fff;border:none;border-radius:7px;font-size:14px;font-weight:600;cursor:pointer;">Aktivieren</button>
+                                </form>
+                            </div>`;
+                        }
+                        if (licData?.expiresAt) {
+                            const exp = new Date(licData.expiresAt);
+                            const diffDays = Math.ceil((exp - Date.now()) / 86400000);
+                            const color = diffDays <= 14 ? '#f59e0b' : '#059669';
+                            const bg    = diffDays <= 14 ? '#fffbeb' : '#f0fdf4';
+                            const border= diffDays <= 14 ? '#fcd34d' : '#bbf7d0';
+                            return `<div style="background:${bg};border:1px solid ${border};border-radius:8px;padding:10px 16px;margin-bottom:18px;display:flex;align-items:center;gap:10px;font-size:13px;">
+                                <span>✅</span>
+                                <span style="color:${color};font-weight:600;">Lizenz gültig bis: ${exp.toLocaleDateString('de-DE', {day:'2-digit',month:'2-digit',year:'numeric'})}${diffDays <= 14 ? ` – noch ${diffDays} Tag${diffDays === 1 ? '' : 'e'}` : ''}</span>
+                            </div>`;
+                        }
+                        return '';
+                    })()}
                     ${content}
                 </div>
                 ${renderSupportFooter()}
@@ -2002,6 +2198,38 @@ app.use((req, res, next) => {
     }
 
     return res.redirect('/admin/setup');
+});
+
+/*
+==================================================
+LIZENZ ERZWINGEN
+==================================================
+*/
+app.use((req, res, next) => {
+    if (licenseValid) return next();
+    if (isSetupRequired()) return next();
+    if (req.path === '/admin/license/activate') return next();
+
+    // GET-Anfragen durchlassen – Banner wird im Layout angezeigt
+    if (req.method === 'GET') return next();
+
+    // Alle schreibenden Aktionen blockieren
+    return res.status(403).send('Lizenz nicht aktiv.');
+});
+
+/*
+==================================================
+LIZENZ ROUTEN
+==================================================
+*/
+app.post('/admin/license/activate', express.urlencoded({ extended: false }), async (req, res) => {
+    const key = String(req.body.licenseKey || '').trim();
+    if (!key) return res.redirect('/admin/license?error=' + encodeURIComponent('Bitte Lizenzschlüssel eingeben'));
+    const result = await activateLicense(key);
+    if (result.success) {
+        return res.redirect('/admin');
+    }
+    return res.redirect('/admin?licenseError=' + encodeURIComponent(result.error));
 });
 
 /*
@@ -6688,6 +6916,9 @@ START
         ensurePublicDir();
         applyDefaultLang();
         refreshMsalClient();
+
+        await checkLicenseOnStartup();
+        setInterval(sendHeartbeat, 24 * 60 * 60 * 1000);
 
         setInterval(runSeatAutoClear, 60 * 1000);
 
