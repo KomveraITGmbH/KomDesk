@@ -6322,13 +6322,8 @@ app.get('/admin/update', requireAdmin, requirePermission('update.view'), (req, r
         </div>
         <div id="upd-error" style="display:none;margin-top:14px;padding:12px 16px;background:var(--warn-bg);border:1px solid var(--warn-border);border-radius:10px;color:var(--warn-text);font-size:14px;"></div>
         <div style="display:flex;gap:10px;margin-top:18px;flex-wrap:wrap;">
-            <form id="check-form" method="POST" action="/admin/update/check?_csrf=${csrf}">
-                <button type="submit" id="check-btn" class="btn" style="min-width:160px;">🔍 Nach Update suchen</button>
-            </form>
-            ${canPerform ? `
-            <form id="perform-form" method="POST" action="/admin/update/perform?_csrf=${csrf}" style="${updateState.hasUpdate ? '' : 'display:none;'}" onsubmit="return confirmPerform(event, 'main')">
-                <button type="submit" class="btn btn-primary" style="min-width:160px;">⬆️ Auf neueste Version</button>
-            </form>` : ''}
+            <button type="button" id="check-btn" class="btn" style="min-width:160px;" onclick="doCheck()">🔍 Nach Update suchen</button>
+            <button type="button" id="perform-btn" class="btn btn-primary" style="min-width:160px;${updateState.hasUpdate ? '' : 'display:none;'}" onclick="doPerform('main')">⬆️ Auf neueste Version</button>
         </div>
         <p style="font-size:12px;opacity:.4;margin-top:10px;">Aktualisiert auf die neueste Version und startet den Server neu. Alle Daten bleiben erhalten.</p>
     </div>
@@ -6336,9 +6331,9 @@ app.get('/admin/update', requireAdmin, requirePermission('update.view'), (req, r
     <div class="card" style="max-width:560px;">
         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;">
             <div style="font-size:13px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;opacity:.45;">Versionshistorie</div>
-            <button id="load-vers-btn" class="btn" style="font-size:13px;padding:6px 14px;" onclick="loadVersions()">Versionen laden</button>
+            <button type="button" id="load-vers-btn" class="btn" style="font-size:13px;padding:6px 14px;" onclick="loadVersions()">Versionen laden</button>
         </div>
-        <div id="ver-list"><p style="font-size:14px;opacity:.4;margin:0;">Klicke auf „Versionen laden" um alle verfügbaren Versionen von GitHub abzurufen.</p></div>
+        <div id="ver-list"><p style="font-size:14px;opacity:.4;margin:0;">Klicke auf „Versionen laden" um alle verfügbaren Versionen abzurufen.</p></div>
     </div>
 
     <div id="upd-overlay" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.7);z-index:9999;align-items:center;justify-content:center;backdrop-filter:blur(4px);">
@@ -6350,84 +6345,86 @@ app.get('/admin/update', requireAdmin, requirePermission('update.view'), (req, r
     </div>
 
     <script>
-    const CSRF = ${JSON.stringify(csrf)};
-    const CURRENT_VER = ${JSON.stringify(updateState.currentVersion)};
+    var UPD_CSRF = '${csrf.replace(/'/g, "\\'")}';
+    var UPD_CURRENT = '${updateState.currentVersion.replace(/'/g, "\\'")}';
+    var UPD_CAN_PERFORM = ${canPerform ? 'true' : 'false'};
 
-    function showOverlay(title) {
-        document.getElementById('overlay-title').textContent = title;
-        document.getElementById('upd-overlay').style.display = 'flex';
-    }
-    function showError(msg) {
-        const el = document.getElementById('upd-error');
+    function updShowError(msg) {
+        var el = document.getElementById('upd-error');
         el.textContent = msg; el.style.display = 'block';
     }
+    function updHideError() { document.getElementById('upd-error').style.display = 'none'; }
 
-    function confirmPerform(e, tag) {
-        const label = tag === 'main' ? 'neueste Version' : 'Version ' + tag;
-        if (!confirm('Jetzt auf ' + label + ' wechseln?\\nDer Server startet danach neu und du wirst kurz abgemeldet.')) { e.preventDefault(); return false; }
-        showOverlay(tag === 'main' ? 'Update wird installiert…' : 'Version ' + tag + ' wird installiert…');
-        return true;
-    }
-
-    document.getElementById('check-form').addEventListener('submit', async function(e) {
-        e.preventDefault();
-        const btn = document.getElementById('check-btn');
+    function doCheck() {
+        var btn = document.getElementById('check-btn');
         btn.disabled = true; btn.textContent = '⏳ Prüfe…';
-        document.getElementById('upd-error').style.display = 'none';
-        try {
-            const r = await fetch(this.action, { method:'POST', headers:{'Content-Type':'application/x-www-form-urlencoded'} });
-            const d = await r.json();
-            if (d.error) { showError(d.error); }
-            else {
+        updHideError();
+        var xhr = new XMLHttpRequest();
+        xhr.open('POST', '/admin/update/check', true);
+        xhr.setRequestHeader('Content-Type', 'application/x-www-form-urlencoded');
+        xhr.onload = function() {
+            btn.disabled = false; btn.textContent = '🔍 Nach Update suchen';
+            try {
+                var d = JSON.parse(xhr.responseText);
+                if (d.error) { updShowError(d.error); return; }
                 document.getElementById('latest-ver').textContent = d.latestVersion ? 'v'+d.latestVersion : '–';
                 document.getElementById('last-check').textContent = d.lastCheck || '–';
-                const pf = document.getElementById('perform-form');
+                var pb = document.getElementById('perform-btn');
                 if (d.hasUpdate) {
                     document.getElementById('update-status').innerHTML = '<span style="color:#d97706;">🔔 Update verfügbar</span>';
-                    if (pf) pf.style.display = '';
+                    if (pb) pb.style.display = '';
                 } else {
                     document.getElementById('update-status').innerHTML = '<span style="color:#059669;">✓ Aktuell</span>';
-                    if (pf) pf.style.display = 'none';
+                    if (pb) pb.style.display = 'none';
                 }
-            }
-        } catch(err) { showError('Fehler: ' + err.message); }
-        btn.disabled = false; btn.textContent = '🔍 Nach Update suchen';
-    });
+            } catch(e) { updShowError('Antwort konnte nicht gelesen werden.'); }
+        };
+        xhr.onerror = function() { btn.disabled=false; btn.textContent='🔍 Nach Update suchen'; updShowError('Netzwerkfehler.'); };
+        xhr.send('_csrf=' + encodeURIComponent(UPD_CSRF));
+    }
 
-    async function loadVersions() {
-        const btn = document.getElementById('load-vers-btn');
-        const list = document.getElementById('ver-list');
+    function doPerform(version) {
+        var label = version === 'main' ? 'neueste Version' : 'Version ' + version;
+        if (!confirm('Jetzt auf ' + label + ' wechseln? Der Server startet danach neu.')) return;
+        document.getElementById('overlay-title').textContent = version === 'main' ? 'Update wird installiert…' : version + ' wird installiert…';
+        document.getElementById('upd-overlay').style.display = 'flex';
+        var xhr = new XMLHttpRequest();
+        xhr.open('POST', '/admin/update/perform', true);
+        xhr.setRequestHeader('Content-Type', 'application/x-www-form-urlencoded');
+        xhr.send('_csrf=' + encodeURIComponent(UPD_CSRF) + (version !== 'main' ? '&version=' + encodeURIComponent(version) : ''));
+    }
+
+    function loadVersions() {
+        var btn = document.getElementById('load-vers-btn');
+        var list = document.getElementById('ver-list');
         btn.disabled = true; btn.textContent = '⏳ Lädt…';
-        document.getElementById('upd-error').style.display = 'none';
-        try {
-            const r = await fetch('/admin/update/versions', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-                body: '_csrf=' + encodeURIComponent(CSRF)
-            });
-            if (!r.ok) { showError('Server-Fehler: HTTP ' + r.status); btn.disabled=false; btn.textContent='Neu laden'; return; }
-            const d = await r.json();
-            if (d.error) { showError(d.error); btn.disabled=false; btn.textContent='Neu laden'; return; }
-            if (!d.versions || !d.versions.length) {
-                list.innerHTML = '<p style="opacity:.4;font-size:14px;margin:0;">Keine Versionen gefunden. Erstelle zuerst einen Git-Tag und pushe ihn zu GitHub (<code>git tag v1.1.0 &amp;&amp; git push origin v1.1.0</code>).</p>';
-                btn.disabled=false; btn.textContent='Neu laden'; return;
-            }
-            const canP = ${JSON.stringify(canPerform)};
-            list.innerHTML = d.versions.map(v => {
-                const isCurrent = v === CURRENT_VER || 'v'+CURRENT_VER === v || CURRENT_VER === 'v'+v;
-                return '<div class="ver-row' + (isCurrent ? ' ver-current' : '') + '">' +
-                    '<div style="display:flex;align-items:center;gap:10px;">' +
-                    '<span class="ver-tag">' + v + '</span>' +
-                    (isCurrent ? '<span style="font-size:11px;background:var(--primary);color:#fff;border-radius:999px;padding:2px 8px;font-weight:700;">Installiert</span>' : '') +
-                    '</div>' +
-                    (canP && !isCurrent ? '<form method="POST" action="/admin/update/perform?_csrf='+encodeURIComponent(CSRF)+'" onsubmit="return confirmPerform(event,\''+v+'\')">' +
-                        '<input type="hidden" name="version" value="'+v+'">' +
-                        '<button type="submit" class="btn" style="font-size:13px;padding:5px 14px;">Installieren</button>' +
-                        '</form>' : '') +
-                    '</div>';
-            }).join('');
-        } catch(err) { showError('Fehler: ' + err.message); }
-        btn.disabled = false; btn.textContent = 'Neu laden';
+        updHideError();
+        var xhr = new XMLHttpRequest();
+        xhr.open('POST', '/admin/update/versions', true);
+        xhr.setRequestHeader('Content-Type', 'application/x-www-form-urlencoded');
+        xhr.onload = function() {
+            btn.disabled = false; btn.textContent = 'Neu laden';
+            try {
+                var d = JSON.parse(xhr.responseText);
+                if (d.error) { updShowError(d.error); return; }
+                if (!d.versions || !d.versions.length) {
+                    list.innerHTML = '<p style="opacity:.4;font-size:14px;margin:0;">Keine Versionen gefunden. Erstelle zuerst einen Git-Tag: <code>git tag v1.x.x &amp;&amp; git push origin v1.x.x</code></p>';
+                    return;
+                }
+                list.innerHTML = d.versions.map(function(v) {
+                    var isCurrent = v === UPD_CURRENT || 'v'+UPD_CURRENT === v || UPD_CURRENT === 'v'+v;
+                    return '<div class="ver-row' + (isCurrent ? ' ver-current' : '') + '">' +
+                        '<div style="display:flex;align-items:center;gap:10px;">' +
+                        '<span class="ver-tag">' + v + '</span>' +
+                        (isCurrent ? '<span style="font-size:11px;background:var(--primary);color:#fff;border-radius:999px;padding:2px 8px;font-weight:700;">Installiert</span>' : '') +
+                        '</div>' +
+                        (UPD_CAN_PERFORM && !isCurrent ? '<button type="button" class="btn" style="font-size:13px;padding:5px 14px;" onclick="doPerform(' + JSON.stringify(v) + ')">Installieren</button>' : '') +
+                        '</div>';
+                }).join('');
+            } catch(e) { updShowError('Antwort konnte nicht gelesen werden.'); }
+        };
+        xhr.onerror = function() { btn.disabled=false; btn.textContent='Neu laden'; updShowError('Netzwerkfehler.'); };
+        xhr.send('_csrf=' + encodeURIComponent(UPD_CSRF));
     }
     </script>
     `;
