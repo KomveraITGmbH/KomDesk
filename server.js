@@ -149,6 +149,7 @@ DATEIEN
 const DATA_DIR = __dirname;
 const PUBLIC_DIR = path.join(__dirname, 'public');
 const LOGO_FILE = path.join(PUBLIC_DIR, 'logo.png');
+const DISPLAY_LOGO_FILE = path.join(PUBLIC_DIR, 'display.png');
 const ROOMS_FILE = path.join(DATA_DIR, 'rooms.json');
 const ADMINS_FILE = path.join(DATA_DIR, 'admins.json');
 const CONFIG_FILE = path.join(DATA_DIR, 'config.json');
@@ -523,10 +524,11 @@ async function saveLogoFromBuffer(fileBuffer) {
 }
 
 async function buildLogoSvg() {
-    if (!fs.existsSync(LOGO_FILE)) return '';
+    const srcFile = fs.existsSync(DISPLAY_LOGO_FILE) ? DISPLAY_LOGO_FILE : LOGO_FILE;
+    if (!fs.existsSync(srcFile)) return '';
     try {
-        const { data, info } = await sharp(LOGO_FILE)
-            .resize(300, 80, { fit: 'contain', background: { r: 255, g: 255, b: 255, alpha: 1 } })
+        const { data, info } = await sharp(srcFile)
+            .resize(400, 100, { fit: 'inside' })
             .flatten({ background: { r: 255, g: 255, b: 255 } })
             .greyscale()
             .threshold(140)
@@ -3699,33 +3701,40 @@ app.get('/admin/logo', requireAdmin, requirePermission('system.logo'), (req, res
     const errorMsg   = req.query.error   ? escapeHtml(decodeURIComponent(req.query.error))   : null;
     const successMsg = req.query.success ? escapeHtml(decodeURIComponent(req.query.success)) : null;
 
+    const displayExists = fs.existsSync(DISPLAY_LOGO_FILE);
+
     const content = `
         <div class="topbar">
             <h1 class="page-title" data-i18n="logo.title">Logo verwalten</h1>
         </div>
 
-        <div class="card">
-            <h2 data-i18n="logo.current">Aktuelles Logo</h2>
-            ${
-                logoExists
-                    ? `<div style="margin-bottom:20px;">
-                        <img src="/logo.png?v=${Date.now()}" alt="Aktuelles Logo" style="max-width:320px; width:100%; height:auto; object-fit:contain; border:1px solid #e5e7eb; border-radius:12px; padding:12px; background:#fff;">
-                       </div>`
-                    : `<p class="muted" data-i18n="logo.noLogo">Aktuell ist kein Logo vorhanden.</p>`
-            }
+        ${successMsg ? `<div class="notice" style="color:#059669;margin-bottom:12px;">${successMsg}</div>` : ''}
+        ${errorMsg ? `<div class="notice notice-warn" style="margin-bottom:12px;">${errorMsg}</div>` : ''}
 
-            ${successMsg ? `<div class="notice" style="color:#059669;">${successMsg}</div>` : ''}
-
-            <div class="notice" data-i18n="logo.info">
-                Das hochgeladene Bild wird automatisch als <strong>logo.png</strong> gespeichert und das alte Logo ersetzt.
-            </div>
-
+        <div class="card" style="margin-bottom:20px;">
+            <h2>Dashboard-Logo <span style="font-size:13px;font-weight:400;opacity:.6;">(logo.png)</span></h2>
+            ${logoExists
+                ? `<div style="margin-bottom:16px;"><img src="/logo.png?v=${Date.now()}" alt="Dashboard Logo" style="max-width:320px;width:100%;height:auto;object-fit:contain;border:1px solid #e5e7eb;border-radius:12px;padding:12px;background:#fff;"></div>`
+                : `<p class="muted">Kein Logo vorhanden.</p>`}
             <form method="POST" action="/admin/logo/upload?_csrf=${getCsrfToken(req)}" enctype="multipart/form-data">
-                <label data-i18n="logo.upload">Neues Logo hochladen</label>
+                <label>Neues Dashboard-Logo hochladen</label>
                 <input type="file" name="logo" accept=".png,.jpg,.jpeg,.webp,image/png,image/jpeg,image/webp" required>
-                <p style="font-size:12px;opacity:.6;margin:4px 0 0 0;">PNG, JPG oder WEBP · max. 5 MB</p>
-                ${errorMsg ? `<div class="notice notice-warn" style="margin-top:10px;">${errorMsg}</div>` : ''}
-                <button type="submit" data-i18n="logo.uploadBtn">Logo hochladen</button>
+                <p style="font-size:12px;opacity:.6;margin:4px 0 8px 0;">PNG, JPG oder WEBP · max. 5 MB</p>
+                <button type="submit">Logo hochladen</button>
+            </form>
+        </div>
+
+        <div class="card">
+            <h2>Display-Logo <span style="font-size:13px;font-weight:400;opacity:.6;">(display.png · für TRMNL-Terminal)</span></h2>
+            <p style="font-size:13px;opacity:.7;margin-bottom:12px;">Wird als Pixel-SVG an das Terminal gesendet. Empfehlung: einfaches Logo ohne kleinen Untertitel-Text.</p>
+            ${displayExists
+                ? `<div style="margin-bottom:16px;"><img src="/display.png?v=${Date.now()}" alt="Display Logo" style="max-width:320px;width:100%;height:auto;object-fit:contain;border:1px solid #e5e7eb;border-radius:12px;padding:12px;background:#fff;"></div>`
+                : `<p class="muted">Kein Display-Logo vorhanden – es wird logo.png verwendet.</p>`}
+            <form method="POST" action="/admin/logo/upload-display?_csrf=${getCsrfToken(req)}" enctype="multipart/form-data">
+                <label>Neues Display-Logo hochladen</label>
+                <input type="file" name="logo" accept=".png,.jpg,.jpeg,.webp,image/png,image/jpeg,image/webp" required>
+                <p style="font-size:12px;opacity:.6;margin:4px 0 8px 0;">PNG, JPG oder WEBP · max. 5 MB</p>
+                <button type="submit">Display-Logo hochladen</button>
             </form>
         </div>
     `;
@@ -3761,6 +3770,40 @@ app.post(
         } catch (err) {
             console.error('Logo Upload Fehler:', err);
             return res.redirect('/admin/logo?error=' + encodeURIComponent('Logo konnte nicht gespeichert werden.'));
+        }
+    }
+);
+
+app.post(
+    '/admin/logo/upload-display',
+    requireAdmin,
+    requirePermission('system.logo'),
+    requireCsrf,
+    (req, res, next) => {
+        upload.single('logo')(req, res, function (err) {
+            if (err) {
+                const msg = err.code === 'LIMIT_FILE_SIZE'
+                    ? 'Display-Logo zu groß – maximale Dateigröße ist 5 MB.'
+                    : (err.message || 'Upload fehlgeschlagen.');
+                return res.redirect('/admin/logo?error=' + encodeURIComponent(msg));
+            }
+            next();
+        });
+    },
+    async (req, res) => {
+        try {
+            if (!req.file) {
+                return res.redirect('/admin/logo?error=' + encodeURIComponent('Bitte eine Bilddatei auswählen.'));
+            }
+            ensurePublicDir();
+            await sharp(req.file.buffer)
+                .resize({ width: 400, withoutEnlargement: true })
+                .png()
+                .toFile(DISPLAY_LOGO_FILE);
+            return res.redirect('/admin/logo?success=' + encodeURIComponent('Display-Logo erfolgreich hochgeladen.'));
+        } catch (err) {
+            console.error('Display-Logo Upload Fehler:', err);
+            return res.redirect('/admin/logo?error=' + encodeURIComponent('Display-Logo konnte nicht gespeichert werden.'));
         }
     }
 );
