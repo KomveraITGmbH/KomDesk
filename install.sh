@@ -314,6 +314,7 @@ server {
     ssl_certificate_key /etc/letsencrypt/live/${DOMAIN}/privkey.pem;
     ssl_protocols       TLSv1.2 TLSv1.3;
     ssl_ciphers         HIGH:!aNULL:!MD5;
+    client_max_body_size 10M;
 
     location / {
         proxy_pass http://127.0.0.1:3000;
@@ -333,6 +334,7 @@ else
 server {
     listen 80;
     server_name _;
+    client_max_body_size 10M;
 
     location / {
         proxy_pass http://127.0.0.1:3000;
