@@ -567,6 +567,7 @@ UPDATE-CHECKER
 ==================================================
 */
 const GITHUB_PKG_URL = 'https://raw.githubusercontent.com/JasonDarrKomvera/KomveraDeskView/main/package.json';
+const GITHUB_TAGS_URL = 'https://api.github.com/repos/JasonDarrKomvera/KomveraDeskView/tags';
 let _localPkgVersion = '0.0.0';
 try { _localPkgVersion = JSON.parse(fs.readFileSync(path.join(__dirname, 'package.json'), 'utf8')).version || '0.0.0'; } catch {}
 
@@ -922,18 +923,18 @@ function renderSidebar(req) {
     const L = loadLocale();
 
     const items = [
-        hasPermission(req, 'dashboard.view') ? `<a href="/admin" data-i18n="nav.dashboard">&#9632; ${L.nav?.dashboard}</a>` : '',
-        hasPermission(req, 'rooms.view') ? `<a href="/admin/rooms" data-i18n="nav.rooms">&#9632; ${L.nav?.rooms}</a>` : '',
-        hasPermission(req, 'terminals.view') ? `<a href="/admin/terminals" data-i18n="nav.terminals">&#9632; ${L.nav?.terminals}</a>` : '',
-        hasPermission(req, 'links.view') ? `<a href="/admin/links" data-i18n="nav.links">&#9632; ${L.nav?.links}</a>` : '',
-        hasPermission(req, 'admins.view') ? `<a href="/admin/admins" data-i18n="nav.admins">&#9632; ${L.nav?.admins}</a>` : '',
-        hasPermission(req, 'microsoft.view') ? `<a href="/admin/microsoft" data-i18n="nav.microsoft">&#9632; ${L.nav?.microsoft}</a>` : '',
-        hasPermission(req, 'system.settings') ? `<a href="/admin/system" data-i18n="nav.system">&#9632; ${L.nav?.system}</a>` : '',
-        hasPermission(req, 'system.logo') ? `<a href="/admin/logo" data-i18n="nav.logo">&#9632; ${L.nav?.logo}</a>` : '',
-        hasPermission(req, 'server.ssh')  ? `<a href="/admin/ssh" data-i18n="nav.ssh">&#9632; ${L.nav?.ssh}</a>` : '',
-        hasPermission(req, 'update.view') ? `<a href="/admin/update">&#9632; ${L.nav?.update || 'Update'}${updateState.hasUpdate ? ' <span style="background:#dc2626;color:#fff;border-radius:999px;font-size:10px;padding:1px 7px;margin-left:4px;font-weight:700;">NEU</span>' : ''}</a>` : '',
-        `<a href="/admin/account" data-i18n="nav.myAccount">&#9632; ${L.nav?.myAccount}</a>`,
-        `<a href="/admin/logout" style="color:#f87171;" data-i18n="nav.logout">&#9632; ${L.nav?.logout}</a>`
+        hasPermission(req, 'dashboard.view') ? `<a href="/admin" data-i18n="nav.dashboard">${L.nav?.dashboard}</a>` : '',
+        hasPermission(req, 'rooms.view') ? `<a href="/admin/rooms" data-i18n="nav.rooms">${L.nav?.rooms}</a>` : '',
+        hasPermission(req, 'terminals.view') ? `<a href="/admin/terminals" data-i18n="nav.terminals">${L.nav?.terminals}</a>` : '',
+        hasPermission(req, 'links.view') ? `<a href="/admin/links" data-i18n="nav.links">${L.nav?.links}</a>` : '',
+        hasPermission(req, 'admins.view') ? `<a href="/admin/admins" data-i18n="nav.admins">${L.nav?.admins}</a>` : '',
+        hasPermission(req, 'microsoft.view') ? `<a href="/admin/microsoft" data-i18n="nav.microsoft">${L.nav?.microsoft}</a>` : '',
+        hasPermission(req, 'system.settings') ? `<a href="/admin/system" data-i18n="nav.system">${L.nav?.system}</a>` : '',
+        hasPermission(req, 'system.logo') ? `<a href="/admin/logo" data-i18n="nav.logo">${L.nav?.logo}</a>` : '',
+        hasPermission(req, 'server.ssh')  ? `<a href="/admin/ssh" data-i18n="nav.ssh">${L.nav?.ssh}</a>` : '',
+        hasPermission(req, 'update.view') ? `<a href="/admin/update">${L.nav?.update || 'Update'}${updateState.hasUpdate ? ' <span style="background:#dc2626;color:#fff;border-radius:999px;font-size:10px;padding:1px 7px;margin-left:4px;font-weight:700;">NEU</span>' : ''}</a>` : '',
+        `<a href="/admin/account" data-i18n="nav.myAccount">${L.nav?.myAccount}</a>`,
+        `<a href="/admin/logout" style="color:#f87171;" data-i18n="nav.logout">${L.nav?.logout}</a>`
     ].filter(Boolean).join('');
 
     return `
@@ -1129,6 +1130,11 @@ function renderAdminLayout(req, title, content) {
             .nav a:hover {
                 background: var(--sidebar-hover);
                 color: #f1f5f9;
+            }
+            .nav a::before {
+                content: '▪ ';
+                opacity: 0.4;
+                font-size: 11px;
             }
             .sidebar-footer {
                 padding: 16px 18px;
@@ -6281,97 +6287,139 @@ app.get('/admin/update', requireAdmin, requirePermission('update.view'), (req, r
     const lastCheckStr = updateState.lastCheck
         ? new Date(updateState.lastCheck).toLocaleString('de-DE')
         : 'Noch nie';
+    const canPerform = hasPermission(req, 'update.perform');
+    const csrf = getCsrfToken(req);
 
     const content = `
-    <div class="topbar">
-        <div>
-            <h1 class="page-title">Update</h1>
-            <div class="muted">GitHub-Updates für DeskView</div>
-        </div>
-    </div>
-    <div class="card" style="max-width:560px;">
-        <div style="display:flex;flex-direction:column;gap:12px;">
-            <div style="display:flex;justify-content:space-between;align-items:center;padding:12px 16px;border:1px solid var(--border);border-radius:10px;font-size:14px;">
-                <span style="opacity:.6;font-weight:500;">Installierte Version</span>
-                <span style="font-weight:700;font-size:15px;">v${escapeHtml(updateState.currentVersion)}</span>
-            </div>
-            <div style="display:flex;justify-content:space-between;align-items:center;padding:12px 16px;border:1px solid var(--border);border-radius:10px;font-size:14px;">
-                <span style="opacity:.6;font-weight:500;">Neueste Version (GitHub)</span>
-                <span id="latest-ver" style="font-weight:700;font-size:15px;">${updateState.latestVersion ? `v${escapeHtml(updateState.latestVersion)}` : '–'}</span>
-            </div>
-            <div style="display:flex;justify-content:space-between;align-items:center;padding:12px 16px;border:1px solid var(--border);border-radius:10px;font-size:14px;">
-                <span style="opacity:.6;font-weight:500;">Status</span>
+    <style>
+    .upd-row { display:flex;justify-content:space-between;align-items:center;padding:12px 16px;border:1px solid var(--border);border-radius:10px;font-size:14px; }
+    .upd-label { opacity:.6;font-weight:500; }
+    .upd-val { font-weight:700;font-size:15px; }
+    .ver-row { display:flex;align-items:center;justify-content:space-between;padding:11px 14px;border:1px solid var(--border);border-radius:10px;font-size:14px;gap:10px; }
+    .ver-row:hover { border-color:var(--primary); }
+    .ver-tag { font-weight:700;font-family:monospace;font-size:14px; }
+    .ver-current { background:var(--notice-bg);border-color:var(--notice-border) !important; }
+    @keyframes spin{to{transform:rotate(360deg)}}
+    .spinner { width:48px;height:48px;border:4px solid var(--border);border-top-color:var(--primary);border-radius:50%;animation:spin .8s linear infinite;margin:0 auto 20px; }
+    </style>
+    <div class="topbar"><div>
+        <h1 class="page-title">Update</h1>
+        <div class="muted">Versionen verwalten &amp; aktualisieren</div>
+    </div></div>
+
+    <div class="card" style="max-width:560px;margin-bottom:20px;">
+        <div style="display:flex;flex-direction:column;gap:10px;">
+            <div class="upd-row"><span class="upd-label">Installierte Version</span><span class="upd-val">v${escapeHtml(updateState.currentVersion)}</span></div>
+            <div class="upd-row"><span class="upd-label">Neueste Version (GitHub)</span><span id="latest-ver" class="upd-val">${updateState.latestVersion ? `v${escapeHtml(updateState.latestVersion)}` : '–'}</span></div>
+            <div class="upd-row"><span class="upd-label">Status</span>
                 <span id="update-status" style="font-weight:600;">${updateState.hasUpdate
                     ? `<span style="color:#d97706;">🔔 Update verfügbar</span>`
                     : updateState.latestVersion
                         ? `<span style="color:#059669;">✓ Aktuell</span>`
                         : `<span style="opacity:.5;">Noch nicht geprüft</span>`}</span>
             </div>
-            <div style="display:flex;justify-content:space-between;align-items:center;padding:12px 16px;border:1px solid var(--border);border-radius:10px;font-size:14px;">
-                <span style="opacity:.6;font-weight:500;">Zuletzt geprüft</span>
-                <span id="last-check" style="font-weight:500;opacity:.7;">${escapeHtml(lastCheckStr)}</span>
-            </div>
+            <div class="upd-row"><span class="upd-label">Zuletzt geprüft</span><span id="last-check" style="font-weight:500;opacity:.7;">${escapeHtml(lastCheckStr)}</span></div>
         </div>
-
-        <div id="update-error" style="display:none;margin-top:14px;padding:12px 16px;background:var(--warn-bg);border:1px solid var(--warn-border);border-radius:10px;color:var(--warn-text);font-size:14px;"></div>
-        <div id="update-success" style="display:none;margin-top:14px;padding:12px 16px;background:#f0fdf4;border:1px solid #86efac;border-radius:10px;color:#166534;font-size:14px;font-weight:600;"></div>
-
-        <div style="display:flex;gap:10px;margin-top:20px;flex-wrap:wrap;">
-            ${hasPermission(req, 'update.view') ? `
-            <form id="check-form" method="POST" action="/admin/update/check?_csrf=${getCsrfToken(req)}">
+        <div id="upd-error" style="display:none;margin-top:14px;padding:12px 16px;background:var(--warn-bg);border:1px solid var(--warn-border);border-radius:10px;color:var(--warn-text);font-size:14px;"></div>
+        <div style="display:flex;gap:10px;margin-top:18px;flex-wrap:wrap;">
+            <form id="check-form" method="POST" action="/admin/update/check?_csrf=${csrf}">
                 <button type="submit" id="check-btn" class="btn" style="min-width:160px;">🔍 Nach Update suchen</button>
-            </form>` : ''}
-            ${hasPermission(req, 'update.perform') ? `
-            <form id="perform-form" method="POST" action="/admin/update/perform?_csrf=${getCsrfToken(req)}" style="${updateState.hasUpdate ? '' : 'display:none;'}" onsubmit="return confirmUpdate()">
-                <button type="submit" id="perform-btn" class="btn btn-primary" style="min-width:160px;">⬆️ Update durchführen</button>
+            </form>
+            ${canPerform ? `
+            <form id="perform-form" method="POST" action="/admin/update/perform?_csrf=${csrf}" style="${updateState.hasUpdate ? '' : 'display:none;'}" onsubmit="return confirmPerform(event, 'main')">
+                <button type="submit" class="btn btn-primary" style="min-width:160px;">⬆️ Auf neueste Version</button>
             </form>` : ''}
         </div>
-        <p style="font-size:12px;opacity:.45;margin-top:12px;">Das Update lädt den neuesten Code von GitHub und startet den Server neu. Alle Daten bleiben erhalten.</p>
+        <p style="font-size:12px;opacity:.4;margin-top:10px;">Aktualisiert auf die neueste Version und startet den Server neu. Alle Daten bleiben erhalten.</p>
     </div>
 
-    <div id="update-overlay" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.7);z-index:9999;display:none;align-items:center;justify-content:center;backdrop-filter:blur(4px);">
+    <div class="card" style="max-width:560px;">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;">
+            <div style="font-size:13px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;opacity:.45;">Versionshistorie</div>
+            <button id="load-vers-btn" class="btn" style="font-size:13px;padding:6px 14px;" onclick="loadVersions()">Versionen laden</button>
+        </div>
+        <div id="ver-list"><p style="font-size:14px;opacity:.4;margin:0;">Klicke auf „Versionen laden" um alle verfügbaren Versionen von GitHub abzurufen.</p></div>
+    </div>
+
+    <div id="upd-overlay" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.7);z-index:9999;align-items:center;justify-content:center;backdrop-filter:blur(4px);">
         <div style="background:var(--card-bg);border-radius:20px;padding:36px 40px;max-width:360px;width:100%;text-align:center;box-shadow:0 24px 60px rgba(0,0,0,.3);">
-            <div style="width:48px;height:48px;border:4px solid var(--border);border-top-color:var(--primary);border-radius:50%;animation:spin .8s linear infinite;margin:0 auto 20px;"></div>
-            <div style="font-size:17px;font-weight:700;margin-bottom:8px;">Update wird durchgeführt…</div>
+            <div class="spinner"></div>
+            <div id="overlay-title" style="font-size:17px;font-weight:700;margin-bottom:8px;">Wird durchgeführt…</div>
             <div style="font-size:13px;opacity:.6;">Bitte warten – der Server startet anschließend neu.</div>
         </div>
     </div>
-    <style>@keyframes spin{to{transform:rotate(360deg)}}</style>
+
     <script>
-    function confirmUpdate() {
-        if (!confirm('Update jetzt durchführen? Der Server startet danach neu und du wirst kurz abgemeldet.')) return false;
-        document.getElementById('update-overlay').style.display = 'flex';
+    const CSRF = ${JSON.stringify(csrf)};
+    const CURRENT_VER = ${JSON.stringify(updateState.currentVersion)};
+
+    function showOverlay(title) {
+        document.getElementById('overlay-title').textContent = title;
+        document.getElementById('upd-overlay').style.display = 'flex';
+    }
+    function showError(msg) {
+        const el = document.getElementById('upd-error');
+        el.textContent = msg; el.style.display = 'block';
+    }
+
+    function confirmPerform(e, tag) {
+        const label = tag === 'main' ? 'neueste Version' : 'Version ' + tag;
+        if (!confirm('Jetzt auf ' + label + ' wechseln?\\nDer Server startet danach neu und du wirst kurz abgemeldet.')) { e.preventDefault(); return false; }
+        showOverlay(tag === 'main' ? 'Update wird installiert…' : 'Version ' + tag + ' wird installiert…');
         return true;
     }
-    // AJAX check
-    document.getElementById('check-form') && document.getElementById('check-form').addEventListener('submit', async function(e) {
+
+    document.getElementById('check-form').addEventListener('submit', async function(e) {
         e.preventDefault();
         const btn = document.getElementById('check-btn');
         btn.disabled = true; btn.textContent = '⏳ Prüfe…';
-        document.getElementById('update-error').style.display = 'none';
+        document.getElementById('upd-error').style.display = 'none';
         try {
             const r = await fetch(this.action, { method:'POST', headers:{'Content-Type':'application/x-www-form-urlencoded'} });
             const d = await r.json();
-            if (d.error) {
-                document.getElementById('update-error').textContent = d.error;
-                document.getElementById('update-error').style.display = 'block';
-            } else {
+            if (d.error) { showError(d.error); }
+            else {
                 document.getElementById('latest-ver').textContent = d.latestVersion ? 'v'+d.latestVersion : '–';
                 document.getElementById('last-check').textContent = d.lastCheck || '–';
+                const pf = document.getElementById('perform-form');
                 if (d.hasUpdate) {
                     document.getElementById('update-status').innerHTML = '<span style="color:#d97706;">🔔 Update verfügbar</span>';
-                    const pf = document.getElementById('perform-form');
                     if (pf) pf.style.display = '';
                 } else {
                     document.getElementById('update-status').innerHTML = '<span style="color:#059669;">✓ Aktuell</span>';
+                    if (pf) pf.style.display = 'none';
                 }
             }
-        } catch(err) {
-            document.getElementById('update-error').textContent = 'Fehler: ' + err.message;
-            document.getElementById('update-error').style.display = 'block';
-        }
+        } catch(err) { showError('Fehler: ' + err.message); }
         btn.disabled = false; btn.textContent = '🔍 Nach Update suchen';
     });
+
+    async function loadVersions() {
+        const btn = document.getElementById('load-vers-btn');
+        btn.disabled = true; btn.textContent = '⏳ Lädt…';
+        try {
+            const r = await fetch('/admin/update/versions?_csrf=' + encodeURIComponent(CSRF), { method:'POST', headers:{'Content-Type':'application/x-www-form-urlencoded'} });
+            const d = await r.json();
+            if (d.error) { showError(d.error); btn.disabled=false; btn.textContent='Versionen laden'; return; }
+            const list = document.getElementById('ver-list');
+            if (!d.versions || !d.versions.length) { list.innerHTML='<p style="opacity:.4;font-size:14px;margin:0;">Keine Versionen gefunden.</p>'; btn.disabled=false; btn.textContent='Versionen laden'; return; }
+            list.innerHTML = d.versions.map(v => {
+                const isCurrent = v === CURRENT_VER || 'v'+CURRENT_VER === v || CURRENT_VER === 'v'+v;
+                const canP = ${JSON.stringify(canPerform)};
+                return '<div class="ver-row' + (isCurrent ? ' ver-current' : '') + '">' +
+                    '<div style="display:flex;align-items:center;gap:10px;">' +
+                    '<span class="ver-tag">' + v + '</span>' +
+                    (isCurrent ? '<span style="font-size:11px;background:var(--primary);color:#fff;border-radius:999px;padding:2px 8px;font-weight:700;">Installiert</span>' : '') +
+                    '</div>' +
+                    (canP && !isCurrent ? '<form method="POST" action="/admin/update/perform?_csrf='+encodeURIComponent(CSRF)+'" onsubmit="return confirmPerform(event,\''+v+'\')">' +
+                        '<input type="hidden" name="version" value="'+v+'">' +
+                        '<button type="submit" class="btn" style="font-size:13px;padding:5px 14px;">Installieren</button>' +
+                        '</form>' : '') +
+                    '</div>';
+            }).join('');
+        } catch(err) { showError('Fehler: ' + err.message); }
+        btn.disabled = false; btn.textContent = 'Neu laden';
+    }
     </script>
     `;
     res.send(renderAdminLayout(req, 'Update', content));
@@ -6379,9 +6427,7 @@ app.get('/admin/update', requireAdmin, requirePermission('update.view'), (req, r
 
 app.post('/admin/update/check', requireAdmin, requirePermission('update.view'), requireCsrf, async (_req, res) => {
     await checkForUpdates();
-    if (updateState.error) {
-        return res.json({ error: 'Prüfung fehlgeschlagen: ' + updateState.error });
-    }
+    if (updateState.error) return res.json({ error: 'Prüfung fehlgeschlagen: ' + updateState.error });
     return res.json({
         currentVersion: updateState.currentVersion,
         latestVersion: updateState.latestVersion,
@@ -6390,18 +6436,32 @@ app.post('/admin/update/check', requireAdmin, requirePermission('update.view'), 
     });
 });
 
+app.post('/admin/update/versions', requireAdmin, requirePermission('update.view'), requireCsrf, async (_req, res) => {
+    try {
+        const r = await fetch(GITHUB_TAGS_URL, { headers: { 'User-Agent': 'KomveraDeskView', 'Cache-Control': 'no-cache' } });
+        if (!r.ok) return res.json({ error: `GitHub API: HTTP ${r.status}` });
+        const tags = await r.json();
+        const versions = Array.isArray(tags) ? tags.map(t => t.name) : [];
+        return res.json({ versions });
+    } catch (e) {
+        return res.json({ error: e.message });
+    }
+});
+
 app.post('/admin/update/perform', requireAdmin, requirePermission('update.perform'), requireCsrf, (req, res) => {
     const APP_DIR = '/opt/komvera-deskview';
-    console.log('[Update] Update gestartet von:', getCurrentAdmin(req)?.username);
+    const version = String(req.body.version || '').trim();
+    const admin = getCurrentAdmin(req);
+    const target = version || 'main';
+    console.log(`[Update] Version "${target}" wird installiert von: ${admin?.username}`);
     res.redirect('/admin/update');
-    // Nach Redirect ausführen
     setTimeout(() => {
-        exec(`cd ${APP_DIR} && git pull origin main && npm install --omit=dev`, { timeout: 120000 }, (err, stdout, stderr) => {
-            if (err) {
-                console.error('[Update] git pull / npm install fehlgeschlagen:', err.message, stderr);
-                return;
-            }
-            console.log('[Update] Dateien aktualisiert:', stdout.slice(0, 300));
+        const gitCmd = version
+            ? `cd ${APP_DIR} && git fetch --tags && git checkout ${version} && npm install --omit=dev`
+            : `cd ${APP_DIR} && git checkout main && git pull origin main && npm install --omit=dev`;
+        exec(gitCmd, { timeout: 120000 }, (err, stdout, stderr) => {
+            if (err) { console.error('[Update] Fehlgeschlagen:', err.message, stderr); return; }
+            console.log('[Update] Abgeschlossen:', stdout.slice(0, 200));
             exec('sudo systemctl restart komvera-deskview', { timeout: 15000 }, (err2) => {
                 if (err2) console.error('[Update] Neustart fehlgeschlagen:', err2.message);
                 else console.log('[Update] Server neu gestartet.');
