@@ -526,9 +526,10 @@ async function buildLogoSvg() {
     if (!fs.existsSync(LOGO_FILE)) return '';
     try {
         const { data, info } = await sharp(LOGO_FILE)
-            .resize(100, 28, { fit: 'contain', background: { r: 255, g: 255, b: 255, alpha: 1 } })
+            .resize(300, 80, { fit: 'contain', background: { r: 255, g: 255, b: 255, alpha: 1 } })
             .flatten({ background: { r: 255, g: 255, b: 255 } })
             .greyscale()
+            .threshold(140)
             .raw()
             .toBuffer({ resolveWithObject: true });
 
