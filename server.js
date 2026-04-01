@@ -528,7 +528,7 @@ async function buildLogoSvg() {
     if (!fs.existsSync(srcFile)) return '';
     try {
         const { data, info } = await sharp(srcFile)
-            .resize(400, 100, { fit: 'inside' })
+            .resize(150, 40, { fit: 'inside' })
             .flatten({ background: { r: 255, g: 255, b: 255 } })
             .greyscale()
             .threshold(140)
@@ -1821,12 +1821,15 @@ async function pushToTrmnl(room) {
     const payload = renderRoomApiJson(room);
     payload.logo_svg = await buildLogoSvg();
     try {
+        const body = JSON.stringify({ merge_variables: payload });
+        console.log(`[pushToTrmnl] Raum ${room.id}: Payload ${body.length} Bytes, logo_svg ${(payload.logo_svg||'').length} Zeichen`);
         const resp = await fetch(terminal.trmnlWebhookUrl, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ merge_variables: payload })
+            body
         });
-        console.log(`[pushToTrmnl] Raum ${room.id}: HTTP ${resp.status}`);
+        const respText = await resp.text();
+        console.log(`[pushToTrmnl] Raum ${room.id}: HTTP ${resp.status} – ${respText.slice(0, 200)}`);
     } catch (err) {
         console.error(`TRMNL Webhook Push Fehler (${room.id}):`, err.message);
     }
