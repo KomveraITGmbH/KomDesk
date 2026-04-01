@@ -517,6 +517,7 @@ async function saveLogoFromBuffer(fileBuffer) {
     ensurePublicDir();
 
     await sharp(fileBuffer)
+        .resize({ width: 400, withoutEnlargement: true })
         .png()
         .toFile(LOGO_FILE);
 }
@@ -3664,8 +3665,10 @@ LOGO
 */
 app.get('/admin/logo', requireAdmin, requirePermission('system.logo'), (req, res) => {
     const logoExists = fs.existsSync(LOGO_FILE);
-
     const L = loadLocale();
+    const errorMsg   = req.query.error   ? escapeHtml(decodeURIComponent(req.query.error))   : null;
+    const successMsg = req.query.success ? escapeHtml(decodeURIComponent(req.query.success)) : null;
+
     const content = `
         <div class="topbar">
             <h1 class="page-title" data-i18n="logo.title">Logo verwalten</h1>
@@ -3675,13 +3678,13 @@ app.get('/admin/logo', requireAdmin, requirePermission('system.logo'), (req, res
             <h2 data-i18n="logo.current">Aktuelles Logo</h2>
             ${
                 logoExists
-                    ? `
-                    <div style="margin-bottom:20px;">
+                    ? `<div style="margin-bottom:20px;">
                         <img src="/logo.png?v=${Date.now()}" alt="Aktuelles Logo" style="max-width:320px; width:100%; height:auto; object-fit:contain; border:1px solid #e5e7eb; border-radius:12px; padding:12px; background:#fff;">
-                    </div>
-                    `
+                       </div>`
                     : `<p class="muted" data-i18n="logo.noLogo">Aktuell ist kein Logo vorhanden.</p>`
             }
+
+            ${successMsg ? `<div class="notice" style="color:#059669;">${successMsg}</div>` : ''}
 
             <div class="notice" data-i18n="logo.info">
                 Das hochgeladene Bild wird automatisch als <strong>logo.png</strong> gespeichert und das alte Logo ersetzt.
@@ -3690,6 +3693,8 @@ app.get('/admin/logo', requireAdmin, requirePermission('system.logo'), (req, res
             <form method="POST" action="/admin/logo/upload?_csrf=${getCsrfToken(req)}" enctype="multipart/form-data">
                 <label data-i18n="logo.upload">Neues Logo hochladen</label>
                 <input type="file" name="logo" accept=".png,.jpg,.jpeg,.webp,image/png,image/jpeg,image/webp" required>
+                <p style="font-size:12px;opacity:.6;margin:4px 0 0 0;">PNG, JPG oder WEBP · max. 5 MB</p>
+                ${errorMsg ? `<div class="notice notice-warn" style="margin-top:10px;">${errorMsg}</div>` : ''}
                 <button type="submit" data-i18n="logo.uploadBtn">Logo hochladen</button>
             </form>
         </div>
@@ -3706,15 +3711,10 @@ app.post(
     (req, res, next) => {
         upload.single('logo')(req, res, function (err) {
             if (err) {
-                return res.status(400).send(renderAdminLayout(req, L.logo.title, `
-                    <div class="topbar">
-                        <h1 class="page-title" data-i18n="logo.title">Logo verwalten</h1>
-                    </div>
-                    <div class="card">
-                        <div class="notice notice-warn">${escapeHtml(err.message || 'Upload fehlgeschlagen.')}</div>
-                        <p><a class="small-link" href="/admin/logo" data-i18n="logo.backToLogo">Zurück zur Logo-Verwaltung</a></p>
-                    </div>
-                `));
+                const msg = err.code === 'LIMIT_FILE_SIZE'
+                    ? 'Logo zu groß – maximale Dateigröße ist 5 MB.'
+                    : (err.message || 'Upload fehlgeschlagen.');
+                return res.redirect('/admin/logo?error=' + encodeURIComponent(msg));
             }
             next();
         });
@@ -3722,42 +3722,15 @@ app.post(
     async (req, res) => {
         try {
             if (!req.file) {
-                return res.status(400).send(renderAdminLayout(req, L.logo.title, `
-                    <div class="topbar">
-                        <h1 class="page-title" data-i18n="logo.title">Logo verwalten</h1>
-                    </div>
-                    <div class="card">
-                        <div class="notice notice-warn" data-i18n="logo.selectFile">Bitte eine Bilddatei auswählen.</div>
-                        <p><a class="small-link" href="/admin/logo" data-i18n="logo.backToLogo">Zurück zur Logo-Verwaltung</a></p>
-                    </div>
-                `));
+                return res.redirect('/admin/logo?error=' + encodeURIComponent('Bitte eine Bilddatei auswählen.'));
             }
 
             await saveLogoFromBuffer(req.file.buffer);
 
-            return res.send(renderAdminLayout(req, L.logo.title, `
-                <div class="topbar">
-                    <h1 class="page-title" data-i18n="logo.title">Logo verwalten</h1>
-                </div>
-                <div class="card">
-                    <div class="notice" data-i18n="logo.uploadSuccess">Logo erfolgreich hochgeladen und ersetzt.</div>
-                    <div style="margin-bottom:20px;">
-                        <img src="/logo.png?v=${Date.now()}" alt="Neues Logo" style="max-width:320px; width:100%; height:auto; object-fit:contain; border:1px solid #e5e7eb; border-radius:12px; padding:12px; background:#fff;">
-                    </div>
-                    <p><a class="small-link" href="/admin/logo" data-i18n="logo.backToLogo">Zurück zur Logo-Verwaltung</a></p>
-                </div>
-            `));
+            return res.redirect('/admin/logo?success=' + encodeURIComponent('Logo erfolgreich hochgeladen und ersetzt.'));
         } catch (err) {
             console.error('Logo Upload Fehler:', err);
-            return res.status(500).send(renderAdminLayout(req, L.logo.title, `
-                <div class="topbar">
-                    <h1 class="page-title" data-i18n="logo.title">Logo verwalten</h1>
-                </div>
-                <div class="card">
-                    <div class="notice notice-warn" data-i18n="logo.uploadError">Logo konnte nicht gespeichert werden.</div>
-                    <p><a class="small-link" href="/admin/logo" data-i18n="logo.backToLogo">Zurück zur Logo-Verwaltung</a></p>
-                </div>
-            `));
+            return res.redirect('/admin/logo?error=' + encodeURIComponent('Logo konnte nicht gespeichert werden.'));
         }
     }
 );
