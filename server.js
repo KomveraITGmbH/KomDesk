@@ -1663,11 +1663,7 @@ function renderAdminLayout(req, title, content) {
     </head>
     <body>
         <div class="sidebar-overlay" id="sidebarOverlay" onclick="closeSidebar()"></div>
-        ${updateState.hasUpdate && hasPermission(req, 'update.view') ? `
-        <a href="/admin/update" style="position:fixed;bottom:0;left:0;right:0;z-index:9999;background:#dc2626;color:#fff;text-align:center;padding:7px 16px;font-size:13px;font-weight:600;text-decoration:none;letter-spacing:.02em;">
-            🔔 Update verfügbar: v${escapeHtml(updateState.latestVersion)} – Jetzt aktualisieren →
-        </a>` : ''}
-        <div class="layout" style="${updateState.hasUpdate && hasPermission(req, 'update.view') ? 'padding-bottom:36px;' : ''}">
+        <div class="layout">
             ${renderSidebar(req)}
             <main class="main">
                 <div class="mobile-topbar">
