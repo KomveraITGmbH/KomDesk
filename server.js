@@ -2217,7 +2217,32 @@ app.use((req, res, next) => {
     if (req.method === 'GET') return next();
 
     // Alle schreibenden Aktionen blockieren
-    return res.status(403).send('Lizenz nicht aktiv.');
+    return res.status(403).send(`<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Lizenz nicht aktiv</title>
+<style>
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif;background:#f3f4f6;min-height:100vh;display:flex;align-items:center;justify-content:center}
+  .card{background:#fff;border-radius:14px;box-shadow:0 4px 24px rgba(0,0,0,.08);padding:44px 40px;width:100%;max-width:420px;text-align:center}
+  .icon{font-size:48px;margin-bottom:16px}
+  h1{font-size:20px;font-weight:700;color:#dc2626;margin-bottom:10px}
+  p{font-size:14px;color:#6b7280;line-height:1.6;margin-bottom:24px}
+  a{display:inline-block;padding:10px 22px;background:#2563eb;color:#fff;border-radius:8px;text-decoration:none;font-size:14px;font-weight:600}
+  a:hover{background:#1d4ed8}
+</style>
+</head>
+<body>
+<div class="card">
+  <div class="icon">🔒</div>
+  <h1>Lizenz nicht aktiv</h1>
+  <p>Diese Aktion ist gesperrt, da keine gültige Lizenz vorhanden ist.<br>Bitte aktiviere zuerst deine Lizenz im Dashboard.</p>
+  <a href="/admin">Zum Dashboard</a>
+</div>
+</body>
+</html>`);
 });
 
 /*
