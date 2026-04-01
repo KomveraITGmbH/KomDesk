@@ -3800,7 +3800,11 @@ app.post(
                 .resize({ width: 400, withoutEnlargement: true })
                 .png()
                 .toFile(DISPLAY_LOGO_FILE);
-            return res.redirect('/admin/logo?success=' + encodeURIComponent('Display-Logo erfolgreich hochgeladen.'));
+            // Alle Räume mit verknüpftem Webhook-Terminal neu pushen
+            for (const room of Object.values(rooms)) {
+                if (room.terminalId) pushToTrmnl(room).catch(() => {});
+            }
+            return res.redirect('/admin/logo?success=' + encodeURIComponent('Display-Logo hochgeladen – alle Terminals werden aktualisiert.'));
         } catch (err) {
             console.error('Display-Logo Upload Fehler:', err);
             return res.redirect('/admin/logo?error=' + encodeURIComponent('Display-Logo konnte nicht gespeichert werden.'));
