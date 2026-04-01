@@ -299,6 +299,7 @@ function runSeatAutoClear() {
     Object.values(rooms).forEach(room => {
         room.seats.forEach((seat, i) => {
             if (seat.name && seat.name !== 'Frei' && seat.since && (now - seat.since) >= ms) {
+                console.log(`[Auto-Freigabe] "${seat.name}" in ${room.abteilung} Platz ${i + 1} automatisch freigegeben`);
                 room.seats[i] = { name: 'Frei', title: '' };
                 changed = true;
             }
@@ -3222,6 +3223,7 @@ app.post('/admin/login', loginLimiter, requireCsrf, async (req, res) => {
             req.session.adminUsername = admin.username;
             req.session.save((saveErr) => {
                 if (saveErr) { const L = loadLocale(); return res.status(500).send(L.errors?.loginFailed); }
+                console.log(`[Login] Admin "${admin.username}" angemeldet (${req.ip})`);
                 return res.redirect('/admin');
             });
         });
@@ -3233,7 +3235,9 @@ app.post('/admin/login', loginLimiter, requireCsrf, async (req, res) => {
 });
 
 app.get('/admin/logout', (req, res) => {
+    const username = req.session?.adminUsername || '?';
     req.session.destroy(() => {
+        console.log(`[Login] Admin "${username}" abgemeldet`);
         res.redirect('/admin/login');
     });
 });
@@ -4942,8 +4946,10 @@ app.post('/admin/clear-seat', requireAdmin, requirePermission('rooms.clearSeat')
             return res.status(400).send(L.errors?.invalidData);
         }
 
+        const prevName = room.seats[seat - 1]?.name || '?';
         room.seats[seat - 1] = { name: 'Frei', title: '' };
         saveRooms();
+        console.log(`[Freigabe] Platz ${seat} in ${room.abteilung} freigegeben (war: "${prevName}") von Admin "${getCurrentAdmin(req)?.username || '?'}"`);
         pushToTrmnl(room);
 
         return res.redirect('/admin/rooms');
@@ -6049,6 +6055,7 @@ app.post('/:room/sit/:seat', requireCsrf, (req, res) => {
 
     room.seats[seat - 1] = { name, title: title || L.booking?.defaultJobTitle || 'Employee', since: Date.now() };
     saveRooms();
+    console.log(`[Einchecken] "${name}" (${title || '–'}) → ${room.abteilung} Platz ${seat}`);
     pushToTrmnl(room);
 
     const logoExists = fs.existsSync(LOGO_FILE);
@@ -6192,6 +6199,7 @@ app.get('/auth/callback', async (req, res) => {
         };
 
         saveRooms();
+        console.log(`[Einchecken] "${fullName}" (${jobTitle}) → ${room.abteilung} Platz ${pendingSeat} [Microsoft SSO]`);
         pushToTrmnl(room);
 
         delete req.session.pendingRoom;
