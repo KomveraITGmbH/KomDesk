@@ -1821,11 +1821,12 @@ async function pushToTrmnl(room) {
     const payload = renderRoomApiJson(room);
     payload.logo_svg = await buildLogoSvg();
     try {
-        await fetch(terminal.trmnlWebhookUrl, {
+        const resp = await fetch(terminal.trmnlWebhookUrl, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ merge_variables: payload })
         });
+        console.log(`[pushToTrmnl] Raum ${room.id}: HTTP ${resp.status}`);
     } catch (err) {
         console.error(`TRMNL Webhook Push Fehler (${room.id}):`, err.message);
     }
@@ -3801,8 +3802,16 @@ app.post(
                 .png()
                 .toFile(DISPLAY_LOGO_FILE);
             // Alle Räume mit verknüpftem Webhook-Terminal neu pushen
-            for (const room of Object.values(rooms)) {
-                if (room.terminalId) pushToTrmnl(room).catch(() => {});
+            const roomList = Object.values(rooms);
+            const withTerminal = roomList.filter(r => r.terminalId);
+            console.log(`[display-logo] ${roomList.length} Räume gesamt, ${withTerminal.length} mit Terminal-ID.`);
+            for (const room of withTerminal) {
+                const terminal = getTerminal(room.terminalId);
+                if (!terminal) { console.log(`[display-logo] Raum ${room.id}: Terminal nicht gefunden.`); continue; }
+                if (terminal.trmnlMode !== 'webhook') { console.log(`[display-logo] Raum ${room.id}: Terminal-Modus ist '${terminal.trmnlMode}', kein Webhook.`); continue; }
+                if (!terminal.trmnlWebhookUrl) { console.log(`[display-logo] Raum ${room.id}: Keine Webhook-URL.`); continue; }
+                console.log(`[display-logo] Raum ${room.id}: Sende Webhook an ${terminal.trmnlWebhookUrl}`);
+                pushToTrmnl(room).catch(e => console.error(`[display-logo] Webhook Fehler Raum ${room.id}:`, e));
             }
             return res.redirect('/admin/logo?success=' + encodeURIComponent('Display-Logo hochgeladen – alle Terminals werden aktualisiert.'));
         } catch (err) {
