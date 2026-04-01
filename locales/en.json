@@ -435,6 +435,10 @@
     "terminals_view":  { "label": "View Terminals",    "desc": "Can see TRMNL terminal devices." },
     "terminals_create":{ "label": "Create Terminals",  "desc": "Can create new TRMNL terminals." },
     "terminals_edit":  { "label": "Edit Terminals",    "desc": "Can change TRMNL terminal settings." },
-    "terminals_delete":{ "label": "Delete Terminals",  "desc": "Can remove TRMNL terminals." }
+    "terminals_delete":{ "label": "Delete Terminals",  "desc": "Can remove TRMNL terminals." },
+    "update_view":     { "label": "View Updates",      "desc": "Can open the update page and see available versions." },
+    "update_perform":  { "label": "Perform Updates",   "desc": "Can install updates and upgrade the server." },
+    "license_view":    { "label": "View License",      "desc": "Can view the license status in the dashboard." },
+    "license_manage":  { "label": "Manage License",    "desc": "Can enter and activate license keys." }
   }
 }

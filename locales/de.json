@@ -435,6 +435,10 @@
     "terminals_view":  { "label": "Terminals anzeigen",   "desc": "Darf TRMNL-Terminal-Geräte sehen." },
     "terminals_create":{ "label": "Terminals erstellen",  "desc": "Darf neue TRMNL-Terminals anlegen." },
     "terminals_edit":  { "label": "Terminals bearbeiten", "desc": "Darf TRMNL-Terminal-Einstellungen ändern." },
-    "terminals_delete":{ "label": "Terminals löschen",    "desc": "Darf TRMNL-Terminals entfernen." }
+    "terminals_delete":{ "label": "Terminals löschen",    "desc": "Darf TRMNL-Terminals entfernen." },
+    "update_view":     { "label": "Updates anzeigen",     "desc": "Darf die Update-Seite öffnen und verfügbare Versionen sehen." },
+    "update_perform":  { "label": "Updates durchführen",  "desc": "Darf Updates installieren und den Server aktualisieren." },
+    "license_view":    { "label": "Lizenz anzeigen",      "desc": "Darf den Lizenzstatus im Dashboard sehen." },
+    "license_manage":  { "label": "Lizenz verwalten",     "desc": "Darf Lizenzschlüssel eingeben und aktivieren." }
   }
 }
