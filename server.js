@@ -1663,7 +1663,11 @@ function renderAdminLayout(req, title, content) {
     </head>
     <body>
         <div class="sidebar-overlay" id="sidebarOverlay" onclick="closeSidebar()"></div>
-        <div class="layout">
+        ${updateState.hasUpdate && hasPermission(req, 'update.view') ? `
+        <a href="/admin/update" style="position:fixed;bottom:0;left:0;right:0;z-index:9999;background:#dc2626;color:#fff;text-align:center;padding:7px 16px;font-size:13px;font-weight:600;text-decoration:none;letter-spacing:.02em;">
+            🔔 Update verfügbar: v${escapeHtml(updateState.latestVersion)} – Jetzt aktualisieren →
+        </a>` : ''}
+        <div class="layout" style="${updateState.hasUpdate && hasPermission(req, 'update.view') ? 'padding-bottom:36px;' : ''}">
             ${renderSidebar(req)}
             <main class="main">
                 <div class="mobile-topbar">
@@ -3383,6 +3387,31 @@ app.get('/admin', requireAdmin, requirePermission('dashboard.view'), (req, res) 
             </div>
         </div>` : '';
 
+    // --- Version ---
+    const versionHtml = hasPermission(req, 'update.view') ? `
+        <div class="card">
+            <div class="db-card-title">🔖 Version</div>
+            <div style="display:flex;flex-direction:column;gap:8px;">
+                <div class="db-info-row">
+                    <span style="opacity:.6;">Installiert</span>
+                    <span style="font-weight:700;font-family:monospace;">v${escapeHtml(updateState.currentVersion)}</span>
+                </div>
+                <div class="db-info-row">
+                    <span style="opacity:.6;">Verfügbar</span>
+                    <span style="font-weight:700;font-family:monospace;">${updateState.latestVersion ? `v${escapeHtml(updateState.latestVersion)}` : '–'}</span>
+                </div>
+                <div class="db-info-row">
+                    <span style="opacity:.6;">Status</span>
+                    <span style="font-weight:600;">${updateState.hasUpdate
+                        ? `<span style="color:#dc2626;">🔔 Update verfügbar</span>`
+                        : updateState.latestVersion
+                            ? `<span style="color:#059669;">✓ Aktuell</span>`
+                            : `<span style="opacity:.4;">Nicht geprüft</span>`}</span>
+                </div>
+            </div>
+            <a href="/admin/update" style="display:inline-block;margin-top:14px;font-size:13px;color:var(--primary);font-weight:600;text-decoration:none;">Update-Seite →</a>
+        </div>` : '';
+
     // --- Server-Status ---
     const serverHtml = hasPermission(req, 'server.view') ? `
         <div class="card db-hero" style="grid-column:1/-1;">
@@ -3499,6 +3528,7 @@ app.get('/admin', requireAdmin, requirePermission('dashboard.view'), (req, res) 
             ${myPermsHtml}
             ${microsoftHtml}
             ${adminsHtml}
+            ${versionHtml}
             ${serverHtml}
         </div>
         <style>
