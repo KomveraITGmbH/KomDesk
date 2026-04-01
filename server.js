@@ -568,7 +568,6 @@ UPDATE-CHECKER
 ==================================================
 */
 const GITHUB_PKG_URL = 'https://raw.githubusercontent.com/JasonDarrKomvera/KomveraDeskView/main/package.json';
-const GITHUB_TAGS_URL = 'https://api.github.com/repos/JasonDarrKomvera/KomveraDeskView/tags';
 let _localPkgVersion = '0.0.0';
 try { _localPkgVersion = JSON.parse(fs.readFileSync(path.join(__dirname, 'package.json'), 'utf8')).version || '0.0.0'; } catch {}
 
@@ -6303,10 +6302,6 @@ app.get('/admin/update', requireAdmin, requirePermission('update.view'), (req, r
     .upd-row { display:flex;justify-content:space-between;align-items:center;padding:12px 16px;border:1px solid var(--border);border-radius:10px;font-size:14px; }
     .upd-label { opacity:.6;font-weight:500; }
     .upd-val { font-weight:700;font-size:15px; }
-    .ver-row { display:flex;align-items:center;justify-content:space-between;padding:11px 14px;border:1px solid var(--border);border-radius:10px;font-size:14px;gap:10px; }
-    .ver-row:hover { border-color:var(--primary); }
-    .ver-tag { font-weight:700;font-family:monospace;font-size:14px; }
-    .ver-current { background:var(--notice-bg);border-color:var(--notice-border) !important; }
     @keyframes spin{to{transform:rotate(360deg)}}
     .spinner { width:48px;height:48px;border:4px solid var(--border);border-top-color:var(--primary);border-radius:50%;animation:spin .8s linear infinite;margin:0 auto 20px; }
     </style>
@@ -6331,31 +6326,21 @@ app.get('/admin/update', requireAdmin, requirePermission('update.view'), (req, r
         <div id="upd-error" style="display:none;margin-top:14px;padding:12px 16px;background:var(--warn-bg);border:1px solid var(--warn-border);border-radius:10px;color:var(--warn-text);font-size:14px;"></div>
         <div style="display:flex;gap:10px;margin-top:18px;flex-wrap:wrap;">
             <button type="button" id="check-btn" class="btn" style="min-width:160px;" onclick="doCheck()">🔍 Nach Update suchen</button>
-            <button type="button" id="perform-btn" class="btn btn-primary" style="min-width:160px;${updateState.hasUpdate ? '' : 'display:none;'}" onclick="doPerform('main')">⬆️ Auf neueste Version</button>
+            ${canPerform ? `<button type="button" id="perform-btn" class="btn btn-primary" style="min-width:160px;${updateState.hasUpdate ? '' : 'display:none;'}" onclick="doPerform()">⬆️ Auf neueste Version</button>` : ''}
         </div>
         <p style="font-size:12px;opacity:.4;margin-top:10px;">Aktualisiert auf die neueste Version und startet den Server neu. Alle Daten bleiben erhalten.</p>
-    </div>
-
-    <div class="card" style="max-width:560px;">
-        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;">
-            <div style="font-size:13px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;opacity:.45;">Versionshistorie</div>
-            <button type="button" id="load-vers-btn" class="btn" style="font-size:13px;padding:6px 14px;" onclick="loadVersions()">Versionen laden</button>
-        </div>
-        <div id="ver-list"><p style="font-size:14px;opacity:.4;margin:0;">Klicke auf „Versionen laden" um alle verfügbaren Versionen abzurufen.</p></div>
     </div>
 
     <div id="upd-overlay" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.7);z-index:9999;align-items:center;justify-content:center;backdrop-filter:blur(4px);">
         <div style="background:var(--card-bg);border-radius:20px;padding:36px 40px;max-width:360px;width:100%;text-align:center;box-shadow:0 24px 60px rgba(0,0,0,.3);">
             <div class="spinner"></div>
-            <div id="overlay-title" style="font-size:17px;font-weight:700;margin-bottom:8px;">Wird durchgeführt…</div>
-            <div style="font-size:13px;opacity:.6;">Bitte warten – der Server startet anschließend neu.</div>
+            <div style="font-size:17px;font-weight:700;margin-bottom:8px;">Update wird installiert…</div>
+            <div id="overlay-countdown" style="font-size:13px;opacity:.6;">Server startet neu – Seite lädt in <span id="upd-sec">15</span> Sekunden…</div>
         </div>
     </div>
 
     <script>
     var UPD_CSRF = '${csrf.replace(/'/g, "\\'")}';
-    var UPD_CURRENT = '${updateState.currentVersion.replace(/'/g, "\\'")}';
-    var UPD_CAN_PERFORM = ${canPerform ? 'true' : 'false'};
 
     function updShowError(msg) {
         var el = document.getElementById('upd-error');
@@ -6391,47 +6376,22 @@ app.get('/admin/update', requireAdmin, requirePermission('update.view'), (req, r
         xhr.send('_csrf=' + encodeURIComponent(UPD_CSRF));
     }
 
-    function doPerform(version) {
-        var label = version === 'main' ? 'neueste Version' : 'Version ' + version;
-        if (!confirm('Jetzt auf ' + label + ' wechseln? Der Server startet danach neu.')) return;
-        document.getElementById('overlay-title').textContent = version === 'main' ? 'Update wird installiert…' : version + ' wird installiert…';
+    function doPerform() {
+        if (!confirm('Update jetzt durchführen? Der Server startet danach neu.')) return;
         document.getElementById('upd-overlay').style.display = 'flex';
+        var sec = 15;
+        var interval = setInterval(function() {
+            sec--;
+            var el = document.getElementById('upd-sec');
+            if (el) el.textContent = sec;
+            if (sec <= 0) {
+                clearInterval(interval);
+                window.location.reload();
+            }
+        }, 1000);
         var xhr = new XMLHttpRequest();
         xhr.open('POST', '/admin/update/perform', true);
         xhr.setRequestHeader('Content-Type', 'application/x-www-form-urlencoded');
-        xhr.send('_csrf=' + encodeURIComponent(UPD_CSRF) + (version !== 'main' ? '&version=' + encodeURIComponent(version) : ''));
-    }
-
-    function loadVersions() {
-        var btn = document.getElementById('load-vers-btn');
-        var list = document.getElementById('ver-list');
-        btn.disabled = true; btn.textContent = '⏳ Lädt…';
-        updHideError();
-        var xhr = new XMLHttpRequest();
-        xhr.open('POST', '/admin/update/versions', true);
-        xhr.setRequestHeader('Content-Type', 'application/x-www-form-urlencoded');
-        xhr.onload = function() {
-            btn.disabled = false; btn.textContent = 'Neu laden';
-            try {
-                var d = JSON.parse(xhr.responseText);
-                if (d.error) { updShowError(d.error); return; }
-                if (!d.versions || !d.versions.length) {
-                    list.innerHTML = '<p style="opacity:.4;font-size:14px;margin:0;">Keine Versionen gefunden. Erstelle zuerst einen Git-Tag: <code>git tag v1.x.x &amp;&amp; git push origin v1.x.x</code></p>';
-                    return;
-                }
-                list.innerHTML = d.versions.map(function(v) {
-                    var isCurrent = v === UPD_CURRENT || 'v'+UPD_CURRENT === v || UPD_CURRENT === 'v'+v;
-                    return '<div class="ver-row' + (isCurrent ? ' ver-current' : '') + '">' +
-                        '<div style="display:flex;align-items:center;gap:10px;">' +
-                        '<span class="ver-tag">' + v + '</span>' +
-                        (isCurrent ? '<span style="font-size:11px;background:var(--primary);color:#fff;border-radius:999px;padding:2px 8px;font-weight:700;">Installiert</span>' : '') +
-                        '</div>' +
-                        (UPD_CAN_PERFORM && !isCurrent ? '<button type="button" class="btn" style="font-size:13px;padding:5px 14px;" onclick="doPerform(' + JSON.stringify(v) + ')">Installieren</button>' : '') +
-                        '</div>';
-                }).join('');
-            } catch(e) { updShowError('Antwort konnte nicht gelesen werden.'); }
-        };
-        xhr.onerror = function() { btn.disabled=false; btn.textContent='Neu laden'; updShowError('Netzwerkfehler.'); };
         xhr.send('_csrf=' + encodeURIComponent(UPD_CSRF));
     }
     </script>
@@ -6450,17 +6410,6 @@ app.post('/admin/update/check', requireAdmin, requirePermission('update.view'), 
     });
 });
 
-app.post('/admin/update/versions', requireAdmin, requirePermission('update.view'), requireCsrf, async (_req, res) => {
-    try {
-        const r = await fetch(GITHUB_TAGS_URL, { headers: { 'User-Agent': 'KomveraDeskView', 'Cache-Control': 'no-cache' } });
-        if (!r.ok) return res.json({ error: `GitHub API: HTTP ${r.status}` });
-        const tags = await r.json();
-        const versions = Array.isArray(tags) ? tags.map(t => t.name) : [];
-        return res.json({ versions });
-    } catch (e) {
-        return res.json({ error: e.message });
-    }
-});
 
 app.post('/admin/update/perform', requireAdmin, requirePermission('update.perform'), requireCsrf, (req, res) => {
     const APP_DIR = '/opt/komvera-deskview';
