@@ -1767,6 +1767,12 @@ function renderRoomApiJson(room) {
         result[`name${i + 1}`] = seat.name;
         result[`title${i + 1}`] = seat.title;
     });
+    if (fs.existsSync(LOGO_FILE)) {
+        const buf = fs.readFileSync(LOGO_FILE);
+        result.logo = 'data:image/png;base64,' + buf.toString('base64');
+    } else {
+        result.logo = '';
+    }
     return result;
 }
 
