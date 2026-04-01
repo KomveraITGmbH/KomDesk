@@ -522,6 +522,40 @@ async function saveLogoFromBuffer(fileBuffer) {
         .toFile(LOGO_FILE);
 }
 
+async function buildLogoSvg() {
+    if (!fs.existsSync(LOGO_FILE)) return '';
+    try {
+        const { data, info } = await sharp(LOGO_FILE)
+            .resize(100, 28, { fit: 'contain', background: { r: 255, g: 255, b: 255, alpha: 1 } })
+            .flatten({ background: { r: 255, g: 255, b: 255 } })
+            .greyscale()
+            .raw()
+            .toBuffer({ resolveWithObject: true });
+
+        const w = info.width;
+        const h = info.height;
+        let d = '';
+        for (let y = 0; y < h; y++) {
+            let x = 0;
+            while (x < w) {
+                if (data[y * w + x] < 128) {
+                    let run = 1;
+                    while (x + run < w && data[y * w + x + run] < 128) run++;
+                    d += `M${x},${y}h${run}v1h-${run}z`;
+                    x += run;
+                } else {
+                    x++;
+                }
+            }
+        }
+        if (!d) return '';
+        return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${w} ${h}"><path fill="#000" d="${d}"/></svg>`;
+    } catch (e) {
+        console.error('buildLogoSvg Fehler:', e);
+        return '';
+    }
+}
+
 function renderSupportFooter(extraText = '') {
     return `
         <div class="support-footer">
@@ -1768,12 +1802,6 @@ function renderRoomApiJson(room) {
         result[`name${i + 1}`] = seat.name;
         result[`title${i + 1}`] = seat.title;
     });
-    if (fs.existsSync(LOGO_FILE)) {
-        const buf = fs.readFileSync(LOGO_FILE);
-        result.logo = 'data:image/png;base64,' + buf.toString('base64');
-    } else {
-        result.logo = '';
-    }
     return result;
 }
 
@@ -1788,6 +1816,7 @@ async function pushToTrmnl(room) {
     if (!terminal || terminal.trmnlMode !== 'webhook' || !terminal.trmnlWebhookUrl) return;
 
     const payload = renderRoomApiJson(room);
+    payload.logo_svg = await buildLogoSvg();
     try {
         await fetch(terminal.trmnlWebhookUrl, {
             method: 'POST',
@@ -3991,6 +4020,7 @@ app.post('/admin/test-trmnl-push', requireAdmin, requirePermission('terminals.ed
 
     const assignedRoom = Object.values(rooms).find(r => r.terminalId === terminalId);
     const payload = assignedRoom ? renderRoomApiJson(assignedRoom) : { abteilung: 'Test', roomnumber: '-', seats: [] };
+    payload.logo_svg = await buildLogoSvg();
 
     try {
         const r = await fetch(terminal.trmnlWebhookUrl, {
