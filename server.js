@@ -1841,6 +1841,7 @@ function renderAdminLayout(req, title, content) {
                     ${(function() {
                         const licData = loadLicenseFile();
                         const licError = req.query.licenseError ? String(req.query.licenseError) : null;
+                        const licOk = req.query.licenseOk === '1';
                         if (!licenseValid) {
                             return `<div style="background:#fef2f2;border:1px solid #fecaca;border-radius:10px;padding:20px 24px;margin-bottom:24px;">
                                 <div style="display:flex;align-items:center;gap:10px;margin-bottom:12px;">
@@ -1853,6 +1854,12 @@ function renderAdminLayout(req, title, content) {
                                     <input type="text" name="licenseKey" placeholder="Lizenzschlüssel eingeben…" required style="flex:1;min-width:220px;padding:9px 13px;border:1px solid #fca5a5;border-radius:7px;font-size:14px;outline:none;">
                                     <button type="submit" style="padding:9px 20px;background:#dc2626;color:#fff;border:none;border-radius:7px;font-size:14px;font-weight:600;cursor:pointer;">Aktivieren</button>
                                 </form>
+                            </div>`;
+                        }
+                        if (licOk) {
+                            return `<div style="background:#f0fdf4;border:1px solid #bbf7d0;border-radius:8px;padding:10px 16px;margin-bottom:18px;display:flex;align-items:center;gap:10px;font-size:13px;">
+                                <span>✅</span>
+                                <span style="color:#059669;font-weight:600;">Lizenz erfolgreich aktiviert!</span>
                             </div>`;
                         }
                         if (licData?.expiresAt) {
@@ -2285,9 +2292,9 @@ app.post('/admin/license/activate', express.urlencoded({ extended: false }), asy
     if (!key) return res.redirect('/admin/license?error=' + encodeURIComponent('Bitte Lizenzschlüssel eingeben'));
     const result = await activateLicense(key);
     if (result.success) {
-        return res.redirect('/admin');
+        return res.redirect('/admin/system?licenseOk=1');
     }
-    return res.redirect('/admin?licenseError=' + encodeURIComponent(result.error));
+    return res.redirect('/admin/system?licenseError=' + encodeURIComponent(result.error));
 });
 
 /*
@@ -4009,6 +4016,35 @@ app.get('/admin/system', requireAdmin, requirePermission('system.settings'), (re
                     `).join('')}
                 </div>
                 <button type="submit" data-i18n="system.seatClearSave">Einstellung speichern</button>
+            </form>
+        </div>
+
+        <div class="card">
+            <h2>🔑 Lizenz</h2>
+            ${(() => {
+                const ld = loadLicenseFile();
+                if (licenseValid && ld) {
+                    const exp = ld.expiresAt ? new Date(ld.expiresAt) : null;
+                    const diffDays = exp ? Math.ceil((exp - Date.now()) / 86400000) : null;
+                    const color  = !exp ? '#059669' : diffDays <= 14 ? '#f59e0b' : '#059669';
+                    const expStr = exp ? exp.toLocaleDateString('de-DE', {day:'2-digit',month:'2-digit',year:'numeric'}) : 'Unbegrenzt';
+                    return `
+                    <div style="display:flex;align-items:center;gap:10px;padding:12px 16px;background:var(--bg);border-radius:8px;border:1px solid var(--border);margin-bottom:20px;">
+                        <span style="font-size:20px;">✅</span>
+                        <div>
+                            <div style="font-weight:600;color:${color};font-size:14px;">Lizenz aktiv – gültig bis ${expStr}${diffDays !== null && diffDays <= 14 ? ` (noch ${diffDays} Tag${diffDays===1?'':'e'})` : ''}</div>
+                            <div style="font-size:12px;color:var(--muted);margin-top:3px;">Key: <code style="background:var(--border);padding:1px 6px;border-radius:4px;">${escapeHtml(ld.key.substring(0,8))}••••••••</code></div>
+                        </div>
+                    </div>`;
+                }
+                return `<div style="padding:12px 16px;background:#fef2f2;border:1px solid #fecaca;border-radius:8px;color:#dc2626;font-size:14px;margin-bottom:20px;">⚠️ Keine aktive Lizenz</div>`;
+            })()}
+            <p style="font-size:14px;color:var(--muted);margin-bottom:16px;">Neuen Lizenzschlüssel eingeben um die aktuelle Lizenz zu ersetzen:</p>
+            <form method="POST" action="/admin/license/activate">
+                <div class="field-wrap">
+                    <input type="text" name="licenseKey" placeholder="Lizenzschlüssel eingeben…" required autocomplete="off" style="font-family:monospace;">
+                </div>
+                <button type="submit">Lizenz aktivieren</button>
             </form>
         </div>
     `;
