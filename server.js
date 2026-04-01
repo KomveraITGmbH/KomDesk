@@ -490,7 +490,7 @@ function csrfField(req) {
 }
 
 function requireCsrf(req, res, next) {
-    const token = String(req.body._csrf || req.query._csrf || '');
+    const token = String((req.body && req.body._csrf) || req.query._csrf || '');
     if (!token || !req.session.csrfToken || token !== req.session.csrfToken) {
         const L = loadLocale();
         return res.status(403).send(L.errors?.csrfInvalid);
