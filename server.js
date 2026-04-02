@@ -1904,6 +1904,24 @@ function renderAdminLayout(req, title, content) {
                 var btn = document.querySelector('[data-eye="' + id + '"]');
                 if (btn) btn.textContent = inp.type === 'password' ? '\uD83D\uDC41' : '\uD83D\uDE48';
             }
+            function kmConfirm(msg, onConfirm, icon, confirmLabel, confirmColor) {
+                icon = icon || '\u26A0\uFE0F';
+                confirmLabel = confirmLabel || 'Bestätigen';
+                confirmColor = confirmColor || '#dc2626';
+                var bg = document.createElement('div');
+                bg.className = 'srv-modal-bg';
+                bg.innerHTML =
+                    '<div class="srv-modal" style="max-width:400px;">' +
+                    '<div class="srv-modal-icon">' + icon + '</div>' +
+                    '<div class="srv-modal-title">' + msg + '</div>' +
+                    '<div class="srv-modal-btns" style="margin-top:24px;">' +
+                    '<button class="srv-modal-cancel" onclick="this.closest(\'.srv-modal-bg\').remove()">Abbrechen</button>' +
+                    '<button class="srv-modal-confirm" style="background:' + confirmColor + ';" id="_km_ok">' + confirmLabel + '</button>' +
+                    '</div></div>';
+                document.body.appendChild(bg);
+                bg.addEventListener('click', function(e){ if(e.target===bg) bg.remove(); });
+                bg.querySelector('#_km_ok').addEventListener('click', function(){ bg.remove(); onConfirm(); });
+            }
             function openSidebar() {
                 document.querySelector('.sidebar').classList.add('sidebar-open');
                 document.getElementById('sidebarOverlay').classList.add('open');
@@ -3951,7 +3969,7 @@ app.get('/admin', requireAdmin, requirePermission('dashboard.view'), (req, res) 
             <details style="font-size:13px;margin-top:10px;">
                 <summary style="cursor:pointer;font-size:13px;font-weight:600;color:#dc2626;margin-bottom:10px;">Lizenz deaktivieren</summary>
                 <p style="font-size:12px;color:var(--muted);margin:8px 0 12px;">Entfernt die Lizenz von diesem Server und gibt den Slot frei – danach kann der Schlüssel auf einem anderen Server aktiviert werden.</p>
-                <form method="POST" action="/admin/license/deactivate" onsubmit="return confirm('Lizenz wirklich deaktivieren? Der Server verliert danach alle Schreibrechte.')">
+                <form method="POST" action="/admin/license/deactivate" onsubmit="return false;" onclick="kmConfirm('Lizenz wirklich deaktivieren?', () => this.closest('form').submit(), '🔓', 'Deaktivieren', '#dc2626')">
                     ${csrfField(req)}
                     <button type="submit" style="background:#dc2626;color:#fff;border:none;padding:7px 16px;border-radius:7px;cursor:pointer;font-size:13px;">Lizenz deaktivieren</button>
                 </form>
@@ -4228,7 +4246,7 @@ app.get('/admin/system', requireAdmin, requirePermission('system.settings'), (re
             <form method="POST" action="/admin/system/backup/restore" enctype="multipart/form-data">
                 ${csrfField(req)}
                 <input type="file" name="backup" accept=".json" required style="margin-bottom:12px;display:block;">
-                <button type="submit" style="background:#dc2626;color:#fff;border:none;padding:8px 18px;border-radius:7px;cursor:pointer;font-size:13px;font-weight:600;" onclick="return confirm('Wirklich wiederherstellen? Alle aktuellen Daten werden überschrieben.')">
+                <button type="submit" style="background:#dc2626;color:#fff;border:none;padding:8px 18px;border-radius:7px;cursor:pointer;font-size:13px;font-weight:600;" onclick="kmConfirm('Wirklich wiederherstellen? Alle aktuellen Daten werden überschrieben.', () => this.closest('form').submit(), '⚠️', 'Wiederherstellen', '#dc2626'); return false;">
                     ↺ Wiederherstellen &amp; Neu starten
                 </button>
             </form>
@@ -4251,7 +4269,7 @@ app.get('/admin/system', requireAdmin, requirePermission('system.settings'), (re
                             <div style="font-size:12px;color:var(--muted);margin-top:3px;">Key: <code style="background:var(--border);padding:1px 6px;border-radius:4px;">${escapeHtml(ld.key.substring(0,8))}••••••••</code> &nbsp;·&nbsp; Fingerprint: <code style="background:var(--border);padding:1px 6px;border-radius:4px;">${escapeHtml((ld.fingerprint||'').substring(0,12))}…</code></div>
                         </div>
                     </div>
-                    <form method="POST" action="/admin/license/deactivate" style="margin-bottom:20px;" onsubmit="return confirm('Lizenz wirklich deaktivieren? Der Server verliert danach alle Schreibrechte.')">
+                    <form method="POST" action="/admin/license/deactivate" style="margin-bottom:20px;" onsubmit="return false;" onclick="kmConfirm('Lizenz wirklich deaktivieren?', () => this.closest('form').submit(), '🔓', 'Deaktivieren', '#dc2626')">
                         ${csrfField(req)}
                         <button type="submit" style="background:#dc2626;color:#fff;border:none;padding:8px 18px;border-radius:7px;cursor:pointer;font-size:13px;font-weight:600;">🔓 Lizenz deaktivieren &amp; Slot freigeben</button>
                     </form>
@@ -5283,7 +5301,7 @@ app.get('/admin/terminals', requireAdmin, requirePermission('terminals.view'), (
             ` : ''}
 
             ${hasPermission(req, 'terminals.delete') ? `
-            <form method="POST" action="/admin/terminals/delete" style="margin-top:16px;" onsubmit="return confirm('Terminal wirklich löschen?')">
+            <form method="POST" action="/admin/terminals/delete" style="margin-top:16px;" onsubmit="return false;" onclick="kmConfirm('Terminal wirklich löschen?', () => this.closest('form').submit(), '🗑️', 'Löschen', '#dc2626')">
                 ${csrfField(req)}
                 <input type="hidden" name="terminalId" value="${escapeHtml(t.id)}">
                 <button type="submit" class="btn-danger" data-i18n="terminals.deleteTerminal">Terminal löschen</button>
@@ -5748,7 +5766,7 @@ app.get('/admin/admins', requireAdmin, requirePermission('admins.view'), (req, r
                     Überträgt den Master-Status an einen anderen Admin. Du wirst danach ein normaler Admin ohne Master-Rechte.
                     Diese Aktion kann nicht rückgängig gemacht werden.
                 </p>
-                <form method="POST" action="/admin/admins/transfer-master" onsubmit="return confirm('Master-Status wirklich übertragen? Du verlierst danach alle Master-Rechte.')">
+                <form method="POST" action="/admin/admins/transfer-master" onsubmit="return false;" onclick="kmConfirm('Master-Status wirklich übertragen? Du verlierst danach alle Master-Rechte.', () => this.closest('form').submit(), '👑', 'Übertragen', '#f59e0b')">
                     ${csrfField(req)}
                     <label data-i18n="admins.newMaster">Neuer Master</label>
                     <select name="targetUsername" required>
@@ -7010,7 +7028,7 @@ app.get('/admin/update', requireAdmin, requirePermission('update.view'), (req, r
     }
 
     function doPerform() {
-        if (!confirm('Update jetzt durchführen? Der Server startet danach neu.')) return;
+        kmConfirm('Update jetzt durchführen? Der Server startet danach neu.', function() { doUpdate(); }, '🔄', 'Update starten', '#2563eb'); return;
         document.getElementById('upd-overlay').style.display = 'flex';
         var sec = 15;
         var interval = setInterval(function() {
