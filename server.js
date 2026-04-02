@@ -4314,7 +4314,7 @@ app.get('/admin/system/backup/download', requireAdmin, requirePermission('system
 
 const backupUpload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 10 * 1024 * 1024 } });
 
-app.post('/admin/system/backup/restore', requireAdmin, requirePermission('system.settings'), requireCsrf, backupUpload.single('backup'), (req, res) => {
+app.post('/admin/system/backup/restore', requireAdmin, requirePermission('system.settings'), backupUpload.single('backup'), requireCsrf, (req, res) => {
     try {
         if (!req.file) return res.status(400).send('Keine Datei hochgeladen.');
         const backup = JSON.parse(req.file.buffer.toString('utf8'));
