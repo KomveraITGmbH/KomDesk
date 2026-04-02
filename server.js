@@ -4212,6 +4212,29 @@ app.get('/admin/system', requireAdmin, requirePermission('system.settings'), (re
         </div>
 
         <div class="card">
+            <h2>💾 Backup</h2>
+            <p style="font-size:14px;color:var(--muted);margin-bottom:16px;line-height:1.5;">
+                Erstelle ein Backup aller Einstellungen (Räume, Admins, Konfiguration, Lizenz, Schlüssel, Logo).
+                Das Backup kann bei einer Neuinstallation wiederhergestellt werden.
+            </p>
+            <a href="/admin/system/backup/download" class="btn" style="display:inline-block;margin-bottom:24px;text-decoration:none;">⬇ Backup herunterladen</a>
+
+            <hr style="border:none;border-top:1px solid var(--border);margin-bottom:20px;">
+
+            <h3 style="font-size:15px;font-weight:600;margin-bottom:8px;">Backup wiederherstellen</h3>
+            <div class="notice notice-warn" style="margin-bottom:14px;">
+                ⚠️ Alle bestehenden Daten werden überschrieben. Nach der Wiederherstellung wird der Server automatisch neu gestartet.
+            </div>
+            <form method="POST" action="/admin/system/backup/restore" enctype="multipart/form-data">
+                ${csrfField(req)}
+                <input type="file" name="backup" accept=".json" required style="margin-bottom:12px;display:block;">
+                <button type="submit" style="background:#dc2626;color:#fff;border:none;padding:8px 18px;border-radius:7px;cursor:pointer;font-size:13px;font-weight:600;" onclick="return confirm('Wirklich wiederherstellen? Alle aktuellen Daten werden überschrieben.')">
+                    ↺ Wiederherstellen &amp; Neu starten
+                </button>
+            </form>
+        </div>
+
+        <div class="card">
             <h2>🔑 Lizenz</h2>
             ${(() => {
                 const ld = loadLicenseFile();
@@ -4247,6 +4270,65 @@ app.get('/admin/system', requireAdmin, requirePermission('system.settings'), (re
     `;
 
     res.send(renderAdminLayout(req, L.system.title, content));
+});
+
+app.get('/admin/system/backup/download', requireAdmin, requirePermission('system.settings'), (_, res) => {
+    const backupFiles = [
+        { key: 'admins.json',    file: ADMINS_FILE },
+        { key: 'rooms.json',     file: ROOMS_FILE },
+        { key: 'config.json',    file: CONFIG_FILE },
+        { key: 'license.json',   file: path.join(__dirname, 'license.json') },
+        { key: 'app.key',        file: KEY_FILE },
+        { key: 'terminals.json', file: TERMINALS_FILE },
+        { key: 'logo.png',       file: LOGO_FILE },
+    ];
+    const backup = { version: '1.0', created: new Date().toISOString(), files: {} };
+    for (const { key, file } of backupFiles) {
+        if (fs.existsSync(file)) {
+            backup.files[key] = fs.readFileSync(file).toString('base64');
+        }
+    }
+    const filename = `komdesk-backup-${new Date().toISOString().slice(0,10)}.json`;
+    res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+    res.setHeader('Content-Type', 'application/json');
+    res.send(JSON.stringify(backup, null, 2));
+});
+
+const backupUpload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 10 * 1024 * 1024 } });
+
+app.post('/admin/system/backup/restore', requireAdmin, requirePermission('system.settings'), requireCsrf, backupUpload.single('backup'), (req, res) => {
+    try {
+        if (!req.file) return res.status(400).send('Keine Datei hochgeladen.');
+        const backup = JSON.parse(req.file.buffer.toString('utf8'));
+        if (!backup.files || typeof backup.files !== 'object') return res.status(400).send('Ungültiges Backup-Format.');
+
+        const restoreMap = {
+            'admins.json':    ADMINS_FILE,
+            'rooms.json':     ROOMS_FILE,
+            'config.json':    CONFIG_FILE,
+            'license.json':   path.join(__dirname, 'license.json'),
+            'app.key':        KEY_FILE,
+            'terminals.json': TERMINALS_FILE,
+            'logo.png':       LOGO_FILE,
+        };
+        for (const [key, filePath] of Object.entries(restoreMap)) {
+            if (backup.files[key]) {
+                fs.mkdirSync(path.dirname(filePath), { recursive: true });
+                fs.writeFileSync(filePath, Buffer.from(backup.files[key], 'base64'));
+            }
+        }
+        setTimeout(() => process.exit(0), 1500);
+        res.send(`<!DOCTYPE html><html><head><meta charset="UTF-8">
+            <style>body{font-family:sans-serif;display:flex;align-items:center;justify-content:center;min-height:100vh;background:#0f172a;color:#f1f5f9;flex-direction:column;gap:16px;}</style>
+        </head><body>
+            <div style="font-size:48px;">✅</div>
+            <h2>Backup wiederhergestellt</h2>
+            <p style="color:#94a3b8;">Server wird neu gestartet – bitte warte kurz…</p>
+            <script>setTimeout(function(){ window.location='/admin'; }, 6000);</script>
+        </body></html>`);
+    } catch(e) {
+        res.status(500).send('Fehler beim Wiederherstellen: ' + escapeHtml(String(e.message)));
+    }
 });
 
 app.post('/admin/system/session-secret', requireAdmin, requirePermission('system.settings'), requireCsrf, (req, res) => {
