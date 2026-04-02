@@ -4217,7 +4217,7 @@ app.get('/admin/system', requireAdmin, requirePermission('system.settings'), (re
                 Erstelle ein Backup aller Einstellungen (Räume, Admins, Konfiguration, Lizenz, Schlüssel, Logo).
                 Das Backup kann bei einer Neuinstallation wiederhergestellt werden.
             </p>
-            <a href="/admin/system/backup/download" class="btn" style="display:inline-block;margin-bottom:24px;text-decoration:none;">⬇ Backup herunterladen</a>
+            <a href="/admin/system/backup/download" style="display:inline-block;margin-bottom:24px;text-decoration:none;background:var(--primary);color:#fff;padding:8px 18px;border-radius:8px;font-size:14px;font-weight:600;">⬇ Backup herunterladen</a>
 
             <hr style="border:none;border-top:1px solid var(--border);margin-bottom:20px;">
 
