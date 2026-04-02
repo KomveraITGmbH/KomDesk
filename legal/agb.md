@@ -14,7 +14,7 @@ Stand: April 2026
 Von-Kerckering-Weg 3  
 33442 Herzebrock-Clarholz  
 Deutschland  
-E-Mail: info@komvera.de  
+E-Mail: komdesk@komvera.de  
 (nachfolgend „Komvera" oder „Anbieter")
 
 und dem Lizenznehmer (nachfolgend „Kunde").

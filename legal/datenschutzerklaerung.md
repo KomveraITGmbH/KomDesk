@@ -15,7 +15,7 @@ Von-Kerckering-Weg 3
 33442 Herzebrock-Clarholz  
 Deutschland
 
-E-Mail: info@komvera.de  
+E-Mail: komdesk@komvera.de  
 Telefon: +49 5245 9247331  
 Webseite: https://komvera.de
 
@@ -167,7 +167,7 @@ Gemäß DSGVO haben betroffene Personen folgende Rechte:
 - **Art. 21 DSGVO** – Widerspruchsrecht gegen Verarbeitungen auf Basis von Art. 6 Abs. 1 lit. f DSGVO.
 - **Art. 77 DSGVO** – Beschwerderecht bei einer Aufsichtsbehörde.
 
-Zur Ausübung Ihrer Rechte wenden Sie sich an: info@komvera.de
+Zur Ausübung Ihrer Rechte wenden Sie sich an: komdesk@komvera.de
 
 **Zuständige Aufsichtsbehörde:**  
 Landesbeauftragte für Datenschutz und Informationsfreiheit Nordrhein-Westfalen (LDI NRW)  

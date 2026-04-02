@@ -20,7 +20,7 @@ Komvera IT GmbH
 Von-Kerckering-Weg 3  
 33442 Herzebrock-Clarholz  
 Deutschland  
-E-Mail: info@komvera.de
+E-Mail: komdesk@komvera.de
 
 **Lizenznehmer:**  
 Das Unternehmen oder die natürliche Person, die eine Lizenz für die Software erworben hat (nachfolgend „Lizenznehmer" oder „Sie").
@@ -166,7 +166,7 @@ Sollten einzelne Bestimmungen dieses EULA ganz oder teilweise unwirksam sein, bl
 Bei Fragen zu diesem EULA wenden Sie sich an:
 
 **Komvera IT GmbH**  
-E-Mail: info@komvera.de
+E-Mail: komdesk@komvera.de
 
 ---
 
