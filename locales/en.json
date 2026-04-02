@@ -106,9 +106,9 @@
     "incomplete": "Incomplete",
     "microsoft": "Microsoft",
     "local": "Local",
-    "deskviewServer": "⚙️ DeskView Server",
+    "komdeskServer": "⚙️ KomDesk Server",
     "systemctlStatus": "📋 systemctl status",
-    "restartDeskview": "↺ Restart DeskView",
+    "restartKomDesk": "↺ Restart KomDesk",
     "restartLinux": "⏻ Restart Linux",
     "cpuRam": "CPU & RAM",
     "cpuCores": "CPU ( Cores)",
@@ -116,7 +116,7 @@
     "ramTotal": "Total RAM",
     "systemSection": "System",
     "systemUptime": "System Uptime",
-    "processSection": "DeskView Process",
+    "processSection": "KomDesk Process",
     "heap": "Heap",
     "rss": "RSS",
     "loggedInAs": "Logged in as"
@@ -186,7 +186,7 @@
   },
   "setup": {
     "title": "Initial Setup",
-    "subtitle": "Welcome to DeskView",
+    "subtitle": "Welcome to KomDesk",
     "subtitle2": "Set up the master admin and session secret once.",
     "description": "Set up your master admin account to get started.",
     "username": "Username",
@@ -282,7 +282,7 @@
     "copy": "Copy",
     "roomId": "Room ID",
     "openRoom": "Open Room View",
-    "openDeskviewApi": "Open DeskView API",
+    "openKomDeskApi": "Open KomDesk API",
     "openLegacyApi": "Open Legacy API"
   },
   "errors": {
@@ -382,7 +382,7 @@
     "modeNone": "No TRMNL",
     "modePolling": "Polling (TRMNL fetches data itself)",
     "modeWebhook": "Webhook / Push",
-    "pollingInfo": "TRMNL fetches the data itself. No push from DeskView needed — set the interval directly in TRMNL.",
+    "pollingInfo": "TRMNL fetches the data itself. No push from KomDesk needed — set the interval directly in TRMNL.",
     "webhookInfo": "Data is sent to TRMNL on every change. The device shows the change on its next poll cycle.",
     "webhookUrl": "Webhook URL",
     "device": "Device",
@@ -428,8 +428,8 @@
     "microsoft_edit": { "label": "Edit Microsoft Config",    "desc": "Can change Client ID, Tenant ID, Secret and Callback." },
     "system_settings":{ "label": "System Settings",         "desc": "Can change the session secret." },
     "system_logo":    { "label": "Manage Logo",              "desc": "Can upload and replace the application logo." },
-    "server_view":    { "label": "View Server Status",       "desc": "Can see uptime, memory and logs of the DeskView server." },
-    "server_restart": { "label": "Restart DeskView",         "desc": "Can restart the DeskView service." },
+    "server_view":    { "label": "View Server Status",       "desc": "Can see uptime, memory and logs of the KomDesk server." },
+    "server_restart": { "label": "Restart KomDesk",         "desc": "Can restart the KomDesk service." },
     "server_reboot":  { "label": "Restart Linux",            "desc": "Can restart the entire Linux server." },
     "server_ssh":     { "label": "SSH Console",              "desc": "Can use the SSH console in the admin area." },
     "terminals_view":  { "label": "View Terminals",    "desc": "Can see TRMNL terminal devices." },
@@ -439,6 +439,6 @@
     "update_view":     { "label": "View Updates",      "desc": "Can open the update page and see available versions." },
     "update_perform":  { "label": "Perform Updates",   "desc": "Can install updates and upgrade the server." },
     "license_view":    { "label": "View License",      "desc": "Can view the license status in the dashboard." },
-    "license_manage":  { "label": "Manage License",    "desc": "Can enter and activate license keys." }
+    "license_manage":  { "label": "Manage License",    "desc": "Can enter, activate and deactivate license keys." }
   }
 }

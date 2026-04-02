@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 set -e
 
-APP_DIR="/opt/komvera-deskview"
-SERVICE_NAME="komvera-deskview"
-GIT_REPO="https://github.com/JasonDarrKomvera/KomveraDeskView.git"
+APP_DIR="/opt/komdesk"
+SERVICE_NAME="komdesk"
+GIT_REPO="https://github.com/KomveraITGmbH/KomDesk.git"
 NODE_MAJOR="20"
 NGINX_CONF="/etc/nginx/sites-available/${SERVICE_NAME}"
 
@@ -36,7 +36,7 @@ if [[ "$LANG_CHOICE" == "2" ]]; then
     MSG_HTTPS_REQ3="  → Required for Microsoft SSO – server stays internal"
     MSG_HTTPS_PROMPT="Set up HTTPS? [y/N]: "
     MSG_HTTPS_YES_REGEX="^[yYjJ]$"
-    MSG_DOMAIN_PROMPT="Enter domain (e.g. deskview.example.com): "
+    MSG_DOMAIN_PROMPT="Enter domain (e.g. komdesk.example.com): "
     MSG_NO_DOMAIN="No domain entered – continuing with HTTP."
     MSG_EMAIL_PROMPT="E-Mail for Let's Encrypt: "
     MSG_NO_EMAIL="No e-mail entered – continuing with HTTP."
@@ -85,7 +85,7 @@ else
     MSG_HTTPS_REQ3="  → Wird für Microsoft SSO benötigt – Server bleibt intern"
     MSG_HTTPS_PROMPT="HTTPS einrichten? [j/N]: "
     MSG_HTTPS_YES_REGEX="^[jJyY]$"
-    MSG_DOMAIN_PROMPT="Domain eingeben (z.B. deskview.example.com): "
+    MSG_DOMAIN_PROMPT="Domain eingeben (z.B. komdesk.example.com): "
     MSG_NO_DOMAIN="Keine Domain eingegeben – weiter mit HTTP."
     MSG_EMAIL_PROMPT="E-Mail für Let's Encrypt: "
     MSG_NO_EMAIL="Keine E-Mail eingegeben – weiter mit HTTP."
@@ -363,7 +363,7 @@ echo "$MSG_SERVICE"
 
 sudo tee /etc/systemd/system/${SERVICE_NAME}.service > /dev/null <<EOF
 [Unit]
-Description=Komvera DeskView
+Description=KomDesk
 After=network.target
 
 [Service]

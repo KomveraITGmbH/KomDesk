@@ -106,9 +106,9 @@
     "incomplete": "Unvollständig",
     "microsoft": "Microsoft",
     "local": "Lokal",
-    "deskviewServer": "⚙️ DeskView Server",
+    "komdeskServer": "⚙️ KomDesk Server",
     "systemctlStatus": "📋 systemctl status",
-    "restartDeskview": "↺ DeskView neu starten",
+    "restartKomDesk": "↺ KomDesk neu starten",
     "restartLinux": "⏻ Linux neu starten",
     "cpuRam": "CPU & RAM",
     "cpuCores": "CPU ( Kerne)",
@@ -116,7 +116,7 @@
     "ramTotal": "RAM gesamt",
     "systemSection": "System",
     "systemUptime": "System-Uptime",
-    "processSection": "DeskView Prozess",
+    "processSection": "KomDesk Prozess",
     "heap": "Heap",
     "rss": "RSS",
     "loggedInAs": "Angemeldet als"
@@ -186,7 +186,7 @@
   },
   "setup": {
     "title": "Ersteinrichtung",
-    "subtitle": "Willkommen bei DeskView",
+    "subtitle": "Willkommen bei KomDesk",
     "subtitle2": "Richte einmalig den Master-Admin und das Session Secret ein.",
     "description": "Richte deinen Master-Admin-Account ein, um loszulegen.",
     "username": "Benutzername",
@@ -282,7 +282,7 @@
     "copy": "Kopieren",
     "roomId": "Raum-ID",
     "openRoom": "Raumansicht öffnen",
-    "openDeskviewApi": "DeskView API öffnen",
+    "openKomDeskApi": "KomDesk API öffnen",
     "openLegacyApi": "Legacy API öffnen"
   },
   "errors": {
@@ -382,7 +382,7 @@
     "modeNone": "Kein TRMNL",
     "modePolling": "Polling (TRMNL zieht Daten selbst)",
     "modeWebhook": "Webhook / Push",
-    "pollingInfo": "TRMNL fragt die Daten selbst ab. Kein Push von DeskView nötig — Intervall direkt in TRMNL einstellen.",
+    "pollingInfo": "TRMNL fragt die Daten selbst ab. Kein Push von KomDesk nötig — Intervall direkt in TRMNL einstellen.",
     "webhookInfo": "Bei jeder Änderung werden die Daten an TRMNL gesendet. Das Gerät zeigt die Änderung beim nächsten Poll-Zyklus an.",
     "webhookUrl": "Webhook URL",
     "device": "Gerät",
@@ -428,8 +428,8 @@
     "microsoft_edit": { "label": "Microsoft-Konfiguration bearbeiten", "desc": "Darf Client-ID, Tenant-ID, Secret und Callback ändern." },
     "system_settings":{ "label": "System-Einstellungen",    "desc": "Darf Session Secret ändern." },
     "system_logo":    { "label": "Logo verwalten",          "desc": "Darf das Logo der Anwendung hochladen und ersetzen." },
-    "server_view":    { "label": "Server-Status anzeigen",  "desc": "Darf Laufzeit, Speicher und Logs des DeskView-Servers sehen." },
-    "server_restart": { "label": "DeskView neu starten",    "desc": "Darf den DeskView-Dienst neu starten." },
+    "server_view":    { "label": "Server-Status anzeigen",  "desc": "Darf Laufzeit, Speicher und Logs des KomDesk-Servers sehen." },
+    "server_restart": { "label": "KomDesk neu starten",    "desc": "Darf den KomDesk-Dienst neu starten." },
     "server_reboot":  { "label": "Linux neu starten",       "desc": "Darf den gesamten Linux-Server neu starten." },
     "server_ssh":     { "label": "SSH-Konsole",             "desc": "Darf die SSH-Konsole im Admin-Bereich verwenden." },
     "terminals_view":  { "label": "Terminals anzeigen",   "desc": "Darf TRMNL-Terminal-Geräte sehen." },
@@ -439,6 +439,6 @@
     "update_view":     { "label": "Updates anzeigen",     "desc": "Darf die Update-Seite öffnen und verfügbare Versionen sehen." },
     "update_perform":  { "label": "Updates durchführen",  "desc": "Darf Updates installieren und den Server aktualisieren." },
     "license_view":    { "label": "Lizenz anzeigen",      "desc": "Darf den Lizenzstatus im Dashboard sehen." },
-    "license_manage":  { "label": "Lizenz verwalten",     "desc": "Darf Lizenzschlüssel eingeben und aktivieren." }
+    "license_manage":  { "label": "Lizenz verwalten",     "desc": "Darf Lizenzschlüssel eingeben, aktivieren und die Lizenz deaktivieren." }
   }
 }

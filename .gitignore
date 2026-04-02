@@ -1,4 +1,21 @@
-node_modules
+# Abhängigkeiten
+node_modules/
+
+# Umgebung & Secrets
 .env
-.claude/
+license.json
+
+# Laufzeitdaten (entstehen beim Betrieb)
+sessions/
+admins.json
+rooms.json
+config.json
+uploads/
+
+# Tools & lokale Dateien
 terminal
+server.obf.js
+
+# OS
+.DS_Store
+Thumbs.db
