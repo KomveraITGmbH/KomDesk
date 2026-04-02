@@ -462,7 +462,8 @@ const DEFAULT_CONFIG = {
         clientID: '',
         tenantID: '',
         clientSecret: '',
-        callbackURL: ''
+        callbackURL: '',
+        teamsPresenceEnabled: false
     }
 };
 
@@ -495,6 +496,7 @@ function runSeatAutoClear() {
         room.seats.forEach((seat, i) => {
             if (seat.name && seat.name !== 'Frei' && seat.since && (now - seat.since) >= ms) {
                 console.log(`[Auto-Freigabe] "${seat.name}" in ${room.abteilung} Platz ${i + 1} automatisch freigegeben`);
+                setTeamsOfficeLocation(seat.msUserId || null, '');
                 room.seats[i] = { name: 'Frei', title: '' };
                 changed = true;
             }
@@ -2139,6 +2141,35 @@ async function fetchMicrosoftUser(accessToken) {
     }
 
     return response.json();
+}
+
+async function setTeamsOfficeLocation(userId, location) {
+    if (!microsoftConfig.teamsPresenceEnabled) return;
+    if (!userId) return;
+    try {
+        const client = new ConfidentialClientApplication({
+            auth: {
+                clientId: microsoftConfig.clientID,
+                authority: `https://login.microsoftonline.com/${microsoftConfig.tenantID}`,
+                clientSecret: microsoftConfig.clientSecret
+            }
+        });
+        const tokenResponse = await client.acquireTokenByClientCredentials({
+            scopes: ['https://graph.microsoft.com/.default']
+        });
+        if (!tokenResponse || !tokenResponse.accessToken) return;
+        await fetch(`https://graph.microsoft.com/v1.0/users/${encodeURIComponent(userId)}`, {
+            method: 'PATCH',
+            headers: {
+                Authorization: `Bearer ${tokenResponse.accessToken}`,
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({ officeLocation: location || '' })
+        });
+        console.log(`[Teams] officeLocation von ${userId} gesetzt auf: "${location || '(leer)'}"`);
+    } catch (e) {
+        console.error('[Teams] officeLocation setzen fehlgeschlagen:', e.message);
+    }
 }
 
 /*
@@ -5590,11 +5621,14 @@ app.post('/admin/clear-seat', requireAdmin, requirePermission('rooms.clearSeat')
             return res.status(400).send(L.errors?.invalidData);
         }
 
-        const prevName = room.seats[seat - 1]?.name || '?';
+        const prevSeat = room.seats[seat - 1] || {};
+        const prevName = prevSeat.name || '?';
+        const prevMsUserId = prevSeat.msUserId || null;
         room.seats[seat - 1] = { name: 'Frei', title: '' };
         saveRooms();
         console.log(`[Freigabe] Platz ${seat} in ${room.abteilung} freigegeben (war: "${prevName}") von Admin "${getCurrentAdmin(req)?.username || '?'}"`);
         pushToTrmnl(room);
+        setTeamsOfficeLocation(prevMsUserId, '');
 
         return res.redirect('/admin/rooms');
     } catch (err) {
@@ -6023,6 +6057,30 @@ app.get('/admin/microsoft', requireAdmin, requirePermission('microsoft.view'), (
         </div>
         ` : ''}
 
+        ${hasPermission(req, 'microsoft.edit') ? `
+        <div class="card">
+            <h2>📍 Raum in Microsoft Teams anzeigen</h2>
+            <p style="font-size:14px;color:var(--muted);margin-bottom:16px;line-height:1.5;">
+                Wenn aktiviert, wird beim Einchecken das Feld <strong>Bürostandort</strong> des Nutzers in Azure AD automatisch auf den gebuchten Raum gesetzt.
+                In Teams ist dieser unter dem Profil des Nutzers sichtbar.<br><br>
+                <strong>Voraussetzung:</strong> App-Berechtigung <code style="background:var(--border);padding:1px 6px;border-radius:4px;">User.ReadWrite.All</code> (Anwendung) mit Admin-Zustimmung in Entra ID.
+            </p>
+            <form method="POST" action="/admin/microsoft/teams-presence">
+                ${csrfField(req)}
+                <div style="display:flex;align-items:center;gap:14px;${!isMicrosoftLoginEnabled() ? 'opacity:.4;pointer-events:none;' : ''}">
+                    <label class="toggle-switch">
+                        <input type="checkbox" name="enabled" value="1" onchange="this.form.submit()" ${microsoftConfig.teamsPresenceEnabled ? 'checked' : ''} ${!isMicrosoftLoginEnabled() ? 'disabled' : ''}>
+                        <span class="toggle-slider"></span>
+                    </label>
+                    <span style="font-size:14px;font-weight:600;">
+                        Teams-Präsenz ist ${microsoftConfig.teamsPresenceEnabled ? '<span style="color:var(--primary)">aktiviert</span>' : '<span style="color:var(--muted)">deaktiviert</span>'}
+                        ${!isMicrosoftLoginEnabled() ? '<span style="font-size:12px;color:var(--muted);font-weight:400;"> (Microsoft Login muss zuerst aktiviert sein)</span>' : ''}
+                    </span>
+                </div>
+            </form>
+        </div>
+        ` : ''}
+
         <div class="card">
             <h2 data-i18n="microsoft.entraData">Entra / Azure AD Daten</h2>
 
@@ -6089,6 +6147,17 @@ app.post('/admin/microsoft/update', requireAdmin, requirePermission('microsoft.e
         console.error(err);
         const L = loadLocale();
         return res.status(500).send(L.errors?.microsoftSaveFailed);
+    }
+});
+
+app.post('/admin/microsoft/teams-presence', requireAdmin, requirePermission('microsoft.edit'), requireCsrf, (req, res) => {
+    try {
+        microsoftConfig.teamsPresenceEnabled = req.body.enabled === '1';
+        saveMicrosoftConfig();
+        return res.redirect('/admin/microsoft');
+    } catch (err) {
+        console.error(err);
+        return res.status(500).send('Fehler beim Speichern');
     }
 });
 
@@ -6703,6 +6772,8 @@ app.post('/:room/sit/:seat', requireCsrf, (req, res) => {
     if (name.length > 128) return res.status(400).send(L.errors?.nameTooLong);
     if (title.length > 128) return res.status(400).send(L.errors?.jobTitleTooLong);
 
+    const prevSeatManual = room.seats[seat - 1] || {};
+    setTeamsOfficeLocation(prevSeatManual.msUserId || null, '');
     room.seats[seat - 1] = { name, title: title || L.booking?.defaultJobTitle || 'Employee', since: Date.now() };
     saveRooms();
     console.log(`[Einchecken] "${name}" (${title || '–'}) → ${room.abteilung} Platz ${seat}`);
@@ -6842,15 +6913,22 @@ app.get('/auth/callback', async (req, res) => {
 
         const jobTitle = graphUser.jobTitle || L.booking?.defaultJobTitle || 'Employee';
 
+        const prevSeatSso = room.seats[pendingSeat - 1] || {};
+        if (prevSeatSso.msUserId && prevSeatSso.msUserId !== (graphUser.id || null)) {
+            setTeamsOfficeLocation(prevSeatSso.msUserId, '');
+        }
+        const msUserId = graphUser.id || null;
         room.seats[pendingSeat - 1] = {
             name: fullName,
             title: jobTitle,
-            since: Date.now()
+            since: Date.now(),
+            msUserId
         };
 
         saveRooms();
         console.log(`[Einchecken] "${fullName}" (${jobTitle}) → ${room.abteilung} Platz ${pendingSeat} [Microsoft SSO]`);
         pushToTrmnl(room);
+        setTeamsOfficeLocation(msUserId, `${room.abteilung} · Platz ${pendingSeat}`);
 
         delete req.session.pendingRoom;
         delete req.session.pendingSeat;
