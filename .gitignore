@@ -14,7 +14,7 @@ uploads/
 
 # Tools & lokale Dateien
 terminal
-server.obf.js
+server_open.js
 
 # OS
 .DS_Store
