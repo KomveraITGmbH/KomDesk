@@ -2188,7 +2188,10 @@ app.use((req, res, next) => {
 
     const allowedPaths = [
         '/admin/setup',
-        '/favicon.ico'
+        '/favicon.ico',
+        '/legal/agb',
+        '/legal/datenschutz',
+        '/legal/eula'
     ];
 
     const staticAllowed =
