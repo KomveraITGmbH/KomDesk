@@ -2233,7 +2233,7 @@ app.use((req, res, next) => {
     if (isSetupRequired()) return next();
 
     // Immer erlaubt (Login, Setup, Lizenz-Aktivierung)
-    const alwaysAllowed = ['/admin/login', '/admin/setup', '/admin/license/activate', '/admin/auth/microsoft'];
+    const alwaysAllowed = ['/admin/login', '/admin/setup', '/admin/license/activate', '/admin/auth/microsoft', '/admin/system/backup/restore'];
     if (alwaysAllowed.includes(req.path)) return next();
 
     // GET-Anfragen durchlassen – Banner wird im Layout angezeigt
