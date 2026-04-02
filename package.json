@@ -1,0 +1,31 @@
+{
+  "name": "komdesk",
+  "version": "1.1.5",
+  "description": "",
+  "main": "server.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "start": "node server.js"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "devDependencies": {
+    "javascript-obfuscator": "^4.1.1"
+  },
+  "dependencies": {
+    "@azure/msal-node": "^2.9.2",
+    "bcrypt": "^6.0.0",
+    "cors": "^2.8.6",
+    "express": "^5.2.1",
+    "express-rate-limit": "^7.5.0",
+    "express-session": "^1.19.0",
+    "session-file-store": "^1.5.0",
+    "helmet": "^8.0.0",
+    "multer": "^2.1.1",
+    "sharp": "^0.34.5",
+    "ssh2": "^1.16.0",
+    "ws": "^8.18.0"
+  }
+}
