@@ -204,8 +204,8 @@ sudo systemctl disable apache2 2>/dev/null || true
 sudo apt-get remove --purge -y apache2 apache2-bin apache2-data apache2-utils 2>/dev/null || true
 sudo rm -rf /etc/apache2 2>/dev/null || true
 sudo systemctl stop nginx 2>/dev/null || true
-sudo rm -f /etc/nginx/sites-enabled/${SERVICE_NAME}
-sudo rm -f /etc/nginx/sites-available/${SERVICE_NAME}
+sudo rm -f /etc/nginx/sites-enabled/*
+sudo rm -f /etc/nginx/sites-available/*
 sudo systemctl daemon-reload
 sudo apt-get autoremove -y 2>/dev/null || true
 
