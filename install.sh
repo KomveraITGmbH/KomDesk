@@ -206,6 +206,7 @@ sudo rm -rf /etc/apache2 2>/dev/null || true
 sudo systemctl stop nginx 2>/dev/null || true
 sudo rm -f /etc/nginx/sites-enabled/*
 sudo rm -f /etc/nginx/sites-available/*
+sudo rm -f /etc/nginx/conf.d/*.conf 2>/dev/null || true
 sudo systemctl daemon-reload
 sudo apt-get autoremove -y 2>/dev/null || true
 
