@@ -15,6 +15,7 @@ uploads/
 # Tools & lokale Dateien
 terminal
 server_open.js
+server_open - kopie.js
 
 # OS
 .DS_Store
